@@ -42,7 +42,7 @@ function find(kind, id){
 }
 function listOf(kind, id){
   var p = cur(), r = null;
-  if(kind === 'g') return p.goals; if(kind === 's') return p.strats;
+  if(kind === 's') return p.strats;
   p.strats.forEach(function(s){ var l = kind === 'k' ? s.kpis : s.acts; if(l.some(function(x){ return x.id === id; })) r = l; });
   return r;
 }
@@ -75,7 +75,7 @@ function light(){
   var sc = $('scoreBadge');
   if(sc){ var l = issues(), b = l.filter(function(i){ return i.lv === 'bad'; }).length; sc.textContent = l.length ? (b ? '🔴' + b + ' ' : '') + (l.length - b ? '🟡' + (l.length - b) : '') : '✓'; }
   var p = cur();
-  p.goals.forEach(function(g){ qa('[data-cov="' + g.id + '"]').forEach(function(e){ e.innerHTML = covChip(p, g); }); });
+  p.goals.forEach(function(g){ qa('[data-cov="' + g.id + '"]').forEach(function(e){ e.innerHTML = covChip(p, g); }); qa('[data-sub="' + g.id + '"]').forEach(function(e){ e.innerHTML = subChip(p, g); }); });
   var o = document.querySelector('#planSel option[value="' + p.id + '"]'); if(o) o.textContent = optName(p);
   var bs = $('budgetSum'); if(bs) bs.textContent = budgetText(p);
 }
@@ -90,7 +90,7 @@ function planBar(){
 function inp(kind, id, f, v, label, o){
   o = o || {}; var dp = kind + '|' + id + '|' + f, a = ' data-p="' + dp + '"' + (o.ph ? ' placeholder="' + esc(o.ph) + '"' : '');
   var c = o.area ? '<textarea rows="' + o.area + '" maxlength="' + (o.max || 400) + '"' + a + '>' + esc(v) + '</textarea>' :
-    o.sel ? '<select' + a + '>' + o.sel.map(function(x){ return '<option value="' + x[0] + '"' + (String(v) === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>' :
+    o.sel ? '<select' + a + (o.redraw ? ' data-redraw="1"' : '') + '>' + o.sel.map(function(x){ return '<option value="' + x[0] + '"' + (String(v) === x[0] ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>' :
     o.type === 'number' ? '<input type="number" step="any" inputmode="decimal"' + a + ' value="' + esc(v) + '">' :
     '<input type="' + (o.type || 'text') + '"' + (o.type === 'date' ? ' max="9999-12-31"' : ' maxlength="' + (o.max || 200) + '"') + a + ' value="' + esc(v) + '">';
   return '<label class="fld' + (o.cls ? ' ' + o.cls : '') + '"><span>' + label + '</span>' + c + '</label>';
@@ -104,8 +104,13 @@ function tools(kind, id, i, n, rw){
 function guessChip(x, kind){ return x.guess ? '<span class="chip warn" data-guess="' + x.id + '">◆ AI 推測，請確認 <button class="lnk" data-act="confirmNum" data-kind="' + kind + '" data-id="' + x.id + '">確認數字</button></span>' : ''; }
 function covChip(p, g){
   var c = D.coverage(p, g), u = g.unit ? ' ' + esc(g.unit) : '';
-  var m = {none:['bad', '▼ 沒有策略支援'], short:['bad', '▼ 還差 ' + fmt(c.short) + u + '（補了 ' + Math.round((c.ratio || 0) * 100) + '%）'], near:['warn', '◆ 略少 ' + fmt(c.short) + u], unest:['warn', '◆ ' + c.unest + ' 條策略沒估貢獻'], over:['warn', '◆ 預估是缺口的 ' + Math.round((c.ratio || 0) * 100) + '%'], ok:['ok', '● 缺口 ' + fmt(c.gap) + u + ' 補得滿（' + Math.round((c.ratio || 0) * 100) + '%）'], na:['na', '－ 填起點與目標才算得出缺口']}[c.st];
+  var m = {none:['bad', '▼ 沒有策略支援'], short:['bad', '▼ 還差 ' + fmt(c.short) + u + '（補了 ' + Math.round((c.ratio || 0) * 100) + '%）'], near:['warn', '◆ 略少 ' + fmt(c.short) + u], unest:['warn', '◆ ' + c.unest + ' 條策略沒估貢獻'], over:['warn', '◆ 預估是缺口的 ' + Math.round((c.ratio || 0) * 100) + '%'], ok:['ok', '● 缺口 ' + fmt(c.gap) + u + ' 補得滿（' + Math.round((c.ratio || 0) * 100) + '%）'], na:['na', '－ 填起點與目標才算得出缺口'], via:['ok', '● 由次目標帶動'], viaBad:['warn', '◆ 有次目標補不滿']}[c.st];
   return '<span class="chip ' + m[0] + '">' + m[1] + '</span>';
+}
+function subChip(p, g){
+  var x = D.subSum(p, g), u = g.unit ? ' ' + esc(g.unit) : '';
+  if(!x) return '';
+  return x.st === 'mix' ? '<span class="chip warn">◆ 單位、方向或數字類型不同，不能加總</span>' : x.st === 'na' ? '<span class="chip na">－ 次目標還沒填完</span>' : x.st === 'ok' ? '<span class="chip ok">● 次目標合計 ' + fmt(x.total) + u + '</span>' : '<span class="chip ' + x.st + '">' + (x.st === 'bad' ? '▼' : '◆') + ' 次目標合計 ' + fmt(x.total) + u + (g.dir === 'down' ? '，超過 ' : '，還差 ') + fmt(x.diff) + '</span>';
 }
 function budgetText(p){ var c = D.costOf(p); return '行動預算合計 ' + fmt(c) + ' 元' + (p.budget === '' ? '' : '／上限 ' + fmt(p.budget) + ' 元' + (c > p.budget ? '　▼ 超過 ' + fmt(c - p.budget) : '')); }
 function tip(bad, good){ return '<details class="tip"><summary>好和不好的差別</summary><p><b>✗</b> ' + bad + '</p><p><b>✓</b> ' + good + '</p></details>'; }
@@ -122,32 +127,36 @@ function fillHTML(){
   h += '<div class="card lv lv-o" data-anchor="o"><h3><span class="big">O</span>最終目的<small>Objective：一句話講清楚要去哪裡，不放數字</small></h3>' + inp('p', '', 'o', p.o, '我們要', {area:2, max:400, ph:'成為〔誰〕心中〔什麼〕的〔什麼〕'}) +
     '<div class="btns sm"><button class="mini" data-act="rewrite" data-kind="o" data-id="">✨ 改寫</button></div>' + tip('追求卓越、成為第一品牌、營收成長 30%', '成為社區居民每天早上第一個想到的咖啡店') + '</div>';
   // G
-  h += '<div class="card lv lv-g" data-anchor="g"><h3><span class="big">G</span>具體目標<small>Goals：哪些數字變了，就代表 O 做到了？2～4 個最好。數字類型：「水準值」看月底是多少（例如回訪率）；「累計值」把每個月加起來（例如全年營收）</small></h3>';
-  p.goals.forEach(function(g, i){
-    h += '<div class="item" data-anchor="' + g.id + '"><div class="ihead"><b class="no">' + L[g.id] + '</b><span data-cov="' + g.id + '"></span>' + guessChip(g, 'g') + (g.src ? '<span class="chip na">⚓ 來自上層</span>' : '') + tools('g', g.id, i, p.goals.length, true) + '</div><div class="grid">' +
-      inp('g', g.id, 't', g.t, '指標名稱', {cls:'w2', ph:'例如 熟客回訪率'}) + inp('g', g.id, 'base', g.base, '現在', {type:'number'}) + inp('g', g.id, 'target', g.target, '目標', {type:'number'}) + inp('g', g.id, 'unit', g.unit, '單位', {max:20, ph:'%'}) +
-      inp('g', g.id, 'due', g.due, '期限', {type:'date'}) + inp('g', g.id, 'dir', g.dir, '方向', {sel:DIR}) + inp('g', g.id, 'acc', g.acc, '數字類型', {sel:ACC}) + '</div></div>';
+  h += '<div class="card lv lv-g" data-anchor="g"><h3><span class="big">G</span>具體目標<small>Goals：哪些數字變了，就代表 O 做到了？2～4 個最好。數字類型：「水準值」看月底是多少（例如回訪率）；「累計值」把每個月加起來（例如全年營收）。大 G 可以再拆成幾個次目標 g，像樹狀圖，最多三層</small></h3>';
+  p.goals.forEach(function(g){
+    var dep = D.depthOf(p, g), sib = D.kids(p, g.up), cs = D.kids(p, g.id), ups = D.upOptions(p, g.id);
+    h += '<div class="item gd' + dep + '" data-anchor="' + g.id + '"><div class="ihead"><b class="no' + (dep ? ' g' : '') + '">' + L[g.id] + '</b><span data-cov="' + g.id + '"></span><span data-sub="' + g.id + '"></span>' + guessChip(g, 'g') + (g.src ? '<span class="chip na">⚓ 來自上層</span>' : '') + tools('g', g.id, sib.indexOf(g), sib.length, true) + '</div><div class="grid">' +
+      inp('g', g.id, 't', g.t, dep ? '次目標名稱' : '指標名稱', {cls:'w2', ph:'例如 熟客回訪率'}) + inp('g', g.id, 'base', g.base, '現在', {type:'number'}) + inp('g', g.id, 'target', g.target, '目標', {type:'number'}) + inp('g', g.id, 'unit', g.unit, '單位', {max:20, ph:'%'}) +
+      inp('g', g.id, 'due', g.due, '期限', {type:'date'}) + inp('g', g.id, 'dir', g.dir, '方向', {sel:DIR}) + inp('g', g.id, 'acc', g.acc, '數字類型', {sel:ACC, redraw:1}) +
+      (g.up || ups.length ? inp('g', g.id, 'up', g.up, '掛在哪個目標下', {sel:[['', '（大目標 G）']].concat(ups.map(function(x){ return [x.id, esc(L[x.id] + ' ' + (x.t || '未命名').slice(0, 14))]; })), redraw:1}) : '') +
+      (cs.length ? inp('g', g.id, 'roll', g.roll, '次目標和它的關係', {cls:'w2', sel:[['drive', D.ROLL.drive], ['sum', D.ROLL.sum]], redraw:1}) : '') + '</div>' +
+      (dep < D.LIM.depth - 1 && cs.length < D.LIM.subs && p.goals.length < D.LIM.goalsAll ? '<button class="mini add" data-act="addSub" data-id="' + g.id + '">＋ ' + L[g.id] + ' 的次目標 g</button>' : '') + '</div>';
   });
-  h += '<div class="btns">' + (p.goals.length < D.LIM.goals ? '<button class="btn alt" data-act="addGoal" data-goto="|addGoal">＋ 加一個目標</button>' : '') + '</div>' + tip('辦 12 場活動（做完不代表有效果）', '熟客回訪率 32% → 45%，12/31 前') + '</div>';
+  h += '<div class="btns">' + (D.kids(p, '').length < D.LIM.goals && p.goals.length < D.LIM.goalsAll ? '<button class="btn alt" data-act="addGoal" data-goto="|addGoal">＋ 加一個大目標 G</button>' : '') + '</div>' + tip('辦 12 場活動（做完不代表有效果）', '熟客回訪率 32% → 45%，12/31 前') + '</div>';
   // S＋M
-  h += '<div class="card lv lv-s" data-anchor="s"><h3><span class="big">S</span>策略 ＋ <span class="big m">M</span>衡量<small>Strategies：靠什麼做法補上缺口，以及為此不做什麼。Measures：怎麼知道有效、誰做到哪天</small></h3><p class="small" id="budgetSum">' + budgetText(p) + '</p>';
+  h += '<div class="card lv lv-s" data-anchor="s"><h3><span class="big">S</span>策略 ＋ <span class="big m">M</span>衡量<small>Strategies：靠什麼做法補上缺口，以及為此不做什麼。Measures 分兩塊：衡量指標（Dashboard）看有沒有效，行動計畫（Action Plans）寫誰做到哪天</small></h3><p class="small" id="budgetSum">' + budgetText(p) + '</p>';
   p.strats.forEach(function(s, i){
     h += '<article class="strat" data-anchor="' + s.id + '"><div class="ihead"><b class="no">' + L[s.id] + '</b>' + (folded(s, i) ? '<b class="ft">' + (esc(s.t) || '（未填）') + '</b><span class="small">指標 ' + s.kpis.length + '・行動 ' + s.acts.length + '</span>' : '') + '<button class="mini" data-act="fold" data-id="' + s.id + '" aria-expanded="' + !folded(s, i) + '">' + (folded(s, i) ? '▸ 展開' : '▾ 收合') + '</button>' + tools('s', s.id, i, p.strats.length, true) + '</div>' +
       (folded(s, i) ? '<div hidden>' : '<div>') + inp('s', s.id, 't', s.t, '策略（一句話的做法）', {ph:'例如 把早餐做成十分鐘外帶套餐'}) +
       '<div class="row">' + inp('s', s.id, 'how', s.how, '具體做法', {area:2, ph:'對誰、用什麼方法、資源放哪'}) + inp('s', s.id, 'not', s.not, '為了這條，我們不做什麼', {area:2, ph:'例如 不做現點現做的早午餐'}) + '</div>';
     h += '<fieldset class="links" data-goto="' + s.id + '|links"><legend>這條策略支援哪些目標？預估能補多少缺口？</legend>' + (p.goals.length ? p.goals.map(function(g){
       var on = D.has(s.links, g.id);
-      return '<div class="lk"><label><input type="checkbox" data-link="' + s.id + '|' + g.id + '"' + (on ? ' checked' : '') + '> <b>' + L[g.id] + '</b> ' + esc(g.t || '（未命名）') + '</label>' +
+      return '<div class="lk gl' + D.depthOf(p, g) + '"><label><input type="checkbox" data-link="' + s.id + '|' + g.id + '"' + (on ? ' checked' : '') + '> <b>' + L[g.id] + '</b> ' + esc(g.t || '（未命名）') + '</label>' +
         (on ? '<label class="fld inl"><span class="sr">' + L[s.id] + ' 對 ' + L[g.id] + ' 的預估貢獻</span><input type="number" min="0" step="any" inputmode="decimal" placeholder="預估" data-contrib="' + s.id + '|' + g.id + '" value="' + esc(s.links[g.id]) + '"> <span data-unit="' + g.id + '">' + esc(g.unit) + '</span></label>' : '') + '</div>';
     }).join('') : '<p class="small">先在上面加目標。</p>') + '</fieldset>';
-    h += '<h4>M 衡量指標</h4>' + s.kpis.map(function(k, j){
+    h += '<section class="mbox md"><h4><span class="big m">M</span>衡量指標 Dashboard<small>這條策略有沒有效？看哪個數字、多久看一次、誰負責</small></h4>' + s.kpis.map(function(k, j){
       return '<div class="item sub" data-anchor="' + k.id + '"><div class="ihead"><b class="no m">' + L[k.id] + '</b>' + guessChip(k, 'k') + tools('k', k.id, j, s.kpis.length, true) + '</div><div class="grid">' +
         inp('k', k.id, 't', k.t, '指標', {cls:'w2', ph:'例如 每日外帶預訂數'}) + inp('k', k.id, 'base', k.base, '現在', {type:'number'}) + inp('k', k.id, 'target', k.target, '目標', {type:'number'}) + inp('k', k.id, 'unit', k.unit, '單位', {max:20}) + inp('k', k.id, 'owner', k.owner, '負責人', {max:30}) +
         inp('k', k.id, 'freq', k.freq, '多久看一次', {sel:Object.keys(D.FREQ).map(function(x){ return [x, D.FREQ[x]]; })}) + inp('k', k.id, 'lead', k.lead ? '1' : '0', '類型', {sel:[['1', '領先（過程）'], ['0', '落後（結果）']]}) + inp('k', k.id, 'dir', k.dir, '方向', {sel:DIR}) + inp('k', k.id, 'acc', k.acc, '數字類型', {sel:ACC}) + '</div></div>';
-    }).join('') + (s.kpis.length < D.LIM.kpis ? '<button class="mini add" data-act="addKpi" data-id="' + s.id + '" data-goto="' + s.id + '|addKpi">＋ 加指標</button>' : '');
-    h += '<h4>M 行動</h4>' + s.acts.map(function(a, j){
+    }).join('') + (s.kpis.length < D.LIM.kpis ? '<button class="mini add" data-act="addKpi" data-id="' + s.id + '" data-goto="' + s.id + '|addKpi">＋ 加衡量指標</button>' : '') + '</section>';
+    h += '<section class="mbox mp"><h4><span class="big m">M</span>行動計畫 Action Plans<small>要做哪些事？誰做、什麼時候開始與完成、花多少錢</small></h4>' + s.acts.map(function(a, j){
       return '<div class="item sub" data-anchor="' + a.id + '"><div class="ihead"><b class="no a">' + L[a.id] + '</b>' + tools('a', a.id, j, s.acts.length, true) + '</div><div class="grid">' + inp('a', a.id, 't', a.t, '要做的事', {cls:'w2'}) + inp('a', a.id, 'owner', a.owner, '負責人', {max:30}) + inp('a', a.id, 'from', a.from, '開始', {type:'date'}) + inp('a', a.id, 'to', a.to, '完成', {type:'date'}) + inp('a', a.id, 'cost', a.cost, '預算（元）', {type:'number'}) + inp('a', a.id, 'st', a.st, '狀態', {sel:Object.keys(D.ST).map(function(x){ return [x, D.ST[x]]; })}) + '</div></div>';
-    }).join('') + (s.acts.length < D.LIM.acts ? '<button class="mini add" data-act="addAct" data-id="' + s.id + '" data-goto="' + s.id + '|addAct">＋ 加行動</button>' : '') + '</div></article>';
+    }).join('') + (s.acts.length < D.LIM.acts ? '<button class="mini add" data-act="addAct" data-id="' + s.id + '" data-goto="' + s.id + '|addAct">＋ 加行動計畫</button>' : '') + '</section></div></article>';
   });
   h += '<div class="btns">' + (p.strats.length < D.LIM.strats ? '<button class="btn alt" data-act="addStrat" data-goto="|addStrat">＋ 加一條策略</button>' : '') + '</div>' + tip('持續優化服務品質', '把早餐做成十分鐘外帶套餐；不做現點現做的早午餐盤') + '</div>';
   return h + '<div class="btns end"><button class="btn" data-tab="check">下一步：看邏輯健檢 →</button></div>';
@@ -158,24 +167,49 @@ function roseSvg(sz){ var r = ''; for(var i = 0; i < 8; i++) r += '<path d="M0 0
 function wrap(t, n, max){ var w = 0, l = '', out = [], cs = Array.from(t || '（未填）'); cs.forEach(function(c){ var k = /[\x00-\xff]/.test(c) ? .55 : 1; if(w + k > n){ out.push(l); l = ''; w = 0; } l += c; w += k; }); if(l) out.push(l); if(out.length > max){ out = out.slice(0, max); out[max - 1] = Array.from(out[max - 1]).slice(0, -1).join('') + '…'; } return out; }
 function txt(lines, x, y, lh, cls, anchor){ return '<text class="' + cls + '" x="' + x + '" y="' + y + '"' + (anchor ? ' text-anchor="' + anchor + '"' : '') + '>' + lines.map(function(l, i){ return '<tspan x="' + x + '" dy="' + (i ? lh : 0) + '">' + esc(l) + '</tspan>'; }).join('') + '</text>'; }
 function mapSvg(p){
-  var L = D.labels(p), nS = p.strats.length, nG = p.goals.length, n = Math.max(nS, nG, 2), H = Math.max(330, n * 84 + 70), W = 1080, e = '', b = '';
+  var L = D.labels(p), nS = p.strats.length, dp = {}, gyById = {}, leaves = p.goals.filter(function(g){ return !D.kids(p, g.id).length; }), maxD = 0;
+  p.goals.forEach(function(g){ dp[g.id] = D.depthOf(p, g); maxD = Math.max(maxD, dp[g.id]); });
+  var n = Math.max(nS, leaves.length, 2), H = Math.max(330, n * 84 + 70), STEP = 290, W = 1080 + maxD * STEP, OX = W - 95, e = '', b = '';
   function ys(c){ var r = [], gap = (H - 50) / Math.max(c, 1); for(var i = 0; i < c; i++) r.push(25 + gap * (i + .5)); return r; }
-  var sy = ys(nS), gy = ys(nG), SX = 180, SW = 295, GX = 610, GW = 235, cy = H / 2, bh = 66;
+  var sy = ys(nS), ly = ys(leaves.length), SX = 180, SW = 295, GW = 235, cy = H / 2, bh = 66;
+  function gx(g){ return 610 + (maxD - dp[g.id]) * STEP; }
+  (function place(g){ var c = D.kids(p, g ? g.id : ''); c.forEach(place); if(g) gyById[g.id] = c.length ? c.reduce(function(a, x){ return a + gyById[x.id]; }, 0) / c.length : ly[leaves.indexOf(g)]; })(null);
   p.strats.forEach(function(s, i){ e += '<path class="ed h" data-e="' + s.id + '" d="M96 ' + cy + 'C140 ' + cy + ' 140 ' + sy[i] + ' ' + SX + ' ' + sy[i] + '"/>'; });
-  p.strats.forEach(function(s, i){ p.goals.forEach(function(g, j){
+  p.strats.forEach(function(s, i){ p.goals.forEach(function(g){
     if(!D.has(s.links, g.id)) return;
+    var GX = gx(g), yg = gyById[g.id];
     var c = D.coverage(p, g), v = s.links[g.id], w = v === '' || !c.gap || c.gap <= 0 ? 1.6 : Math.min(8, Math.max(1.6, 8 * v / c.gap));
-    e += '<path class="ed r' + (v === '' ? ' dash' : '') + '" data-e="' + s.id + ' ' + g.id + '" style="stroke-width:' + w.toFixed(1) + 'px" d="M' + (SX + SW) + ' ' + sy[i] + 'C' + (GX - 70) + ' ' + sy[i] + ' ' + (GX - 70) + ' ' + gy[j] + ' ' + GX + ' ' + gy[j] + '"><title>' + L[s.id] + ' → ' + L[g.id] + (v === '' ? '（沒估貢獻）' : '：預估 ' + fmt(v) + ' ' + esc(g.unit) + (c.gap > 0 ? '，占缺口 ' + Math.round(v / c.gap * 100) + '%' : '')) + '</title></path>';
+    e += '<path class="ed r' + (v === '' ? ' dash' : '') + '" data-e="' + s.id + ' ' + g.id + '" style="stroke-width:' + w.toFixed(1) + 'px" d="M' + (SX + SW) + ' ' + sy[i] + 'C' + (GX - 70) + ' ' + sy[i] + ' ' + (GX - 70) + ' ' + yg + ' ' + GX + ' ' + yg + '"><title>' + L[s.id] + ' → ' + L[g.id] + (v === '' ? '（沒估貢獻）' : '：預估 ' + fmt(v) + ' ' + esc(g.unit) + (c.gap > 0 ? '，占缺口 ' + Math.round(v / c.gap * 100) + '%' : '')) + '</title></path>';
   }); });
-  p.goals.forEach(function(g, j){ e += '<path class="ed h" data-e="' + g.id + '" d="M' + (GX + GW) + ' ' + gy[j] + 'C' + (GX + GW + 55) + ' ' + gy[j] + ' ' + (GX + GW + 45) + ' ' + (cy - 46) + ' 936 ' + (cy - 46) + '"/>'; });
+  p.goals.forEach(function(g){
+    var x1 = gx(g) + GW, y1 = gyById[g.id], q = g.up && D.goalById(p, g.up);
+    e += q ? '<path class="ed tr' + (q.roll === 'sum' ? '' : ' dash') + '" data-e="' + g.id + ' ' + q.id + '" d="M' + x1 + ' ' + y1 + 'C' + (x1 + 30) + ' ' + y1 + ' ' + (gx(q) - 30) + ' ' + gyById[q.id] + ' ' + gx(q) + ' ' + gyById[q.id] + '"><title>' + L[g.id] + ' → ' + L[q.id] + '：' + D.ROLL[q.roll] + '</title></path>'
+      : '<path class="ed h" data-e="' + g.id + '" d="M' + x1 + ' ' + y1 + 'C' + (x1 + 55) + ' ' + y1 + ' ' + (x1 + 45) + ' ' + (cy - 46) + ' ' + (OX - 49) + ' ' + (cy - 46) + '"/>';
+  });
   p.strats.forEach(function(s, i){ var y = sy[i]; b += '<g class="nd" data-n="' + s.id + '" data-act="goto" data-id="' + s.id + '" data-field="t" tabindex="0" role="button" aria-label="' + esc(L[s.id] + ' ' + s.t) + '"><path class="hull" d="M' + (SX + 10) + ' ' + (y - bh / 2) + 'H' + (SX + SW - 26) + 'L' + (SX + SW) + ' ' + y + 'L' + (SX + SW - 26) + ' ' + (y + bh / 2) + 'H' + (SX + 10) + 'Q' + SX + ' ' + y + ' ' + (SX + 10) + ' ' + (y - bh / 2) + 'Z"/>' + '<text class="nl" x="' + (SX + 18) + '" y="' + (y + 6) + '">' + L[s.id] + '</text>' + txt(wrap(s.t, 14, 2), SX + 54, y - (wrap(s.t, 14, 2).length > 1 ? 12 : 3), 18, 'nt') + '<text class="ns" x="' + (SX + 54) + '" y="' + (y + 25) + '">指標 ' + s.kpis.length + '・行動 ' + s.acts.filter(function(a){ return a.st === 'done'; }).length + '／' + s.acts.length + ' 完成</text></g>'; });
-  p.goals.forEach(function(g, j){ var y = gy[j], c = D.coverage(p, g), k = {ok:'ok', over:'warn', near:'warn', unest:'warn', short:'bad', none:'bad', na:'na'}[c.st], ic = {ok:'●', warn:'◆', bad:'▼', na:'－'}[k];
-    b += '<g class="nd" data-n="' + g.id + '" data-act="goto" data-id="' + g.id + '" data-field="t" tabindex="0" role="button" aria-label="' + esc(L[g.id] + ' ' + g.t) + '"><rect class="buoy" x="' + GX + '" y="' + (y - bh / 2) + '" width="' + GW + '" height="' + bh + '" rx="33"/><text class="nl g" x="' + (GX + 18) + '" y="' + (y + 6) + '">' + L[g.id] + '</text>' + txt(wrap(g.t, 10, 1), GX + 58, y - 5, 18, 'nt') + '<text class="ns" x="' + (GX + 58) + '" y="' + (y + 16) + '">' + esc((g.base === '' ? '' : fmt(g.base) + ' → ') + fmt(g.target) + ' ' + g.unit) + '</text><text class="st-' + k + '" x="' + (GX + GW - 26) + '" y="' + (y + 6) + '" text-anchor="middle">' + ic + '</text></g>'; });
+  p.goals.forEach(function(g){ var GX = gx(g), y = gyById[g.id], c = D.coverage(p, g), k = {ok:'ok', via:'ok', viaBad:'warn', over:'warn', near:'warn', unest:'warn', short:'bad', none:'bad', na:'na'}[c.st], ic = {ok:'●', warn:'◆', bad:'▼', na:'－'}[k];
+    b += '<g class="nd" data-n="' + g.id + '" data-act="goto" data-id="' + g.id + '" data-field="t" tabindex="0" role="button" aria-label="' + esc(L[g.id] + ' ' + g.t) + '"><rect class="buoy" x="' + GX + '" y="' + (y - bh / 2) + '" width="' + GW + '" height="' + bh + '" rx="33"/><text class="nl g" x="' + (GX + 18) + '" y="' + (y + 6) + '">' + L[g.id] + '</text>' + txt(wrap(g.t, [10, 9, 7][dp[g.id]], 1), GX + [58, 72, 90][dp[g.id]], y - 5, 18, 'nt') + '<text class="ns" x="' + (GX + [58, 72, 90][dp[g.id]]) + '" y="' + (y + 16) + '">' + esc((g.base === '' ? '' : fmt(g.base) + ' → ') + fmt(g.target) + ' ' + g.unit) + '</text><text class="st-' + k + '" x="' + (GX + GW - 26) + '" y="' + (y + 6) + '" text-anchor="middle">' + ic + '</text></g>'; });
   var grid = ''; for(var x = 60; x < W; x += 120) grid += '<path class="gl" d="M' + x + ' 0V' + H + '"/>'; for(var yy = 60; yy < H; yy += 90) grid += '<path class="gl" d="M0 ' + yy + 'H' + W + '"/>';
   var depth = [0, 1, 2].map(function(i){ return '<path class="dp" d="M0 ' + (H * (.62 + i * .13)) + 'C200 ' + (H * (.5 + i * .16)) + ' 420 ' + (H * (.86 + i * .08)) + ' 640 ' + (H * (.74 + i * .1)) + 'S960 ' + (H * (.9 + i * .05)) + ' ' + W + ' ' + (H * (.72 + i * .12)) + '"/>'; }).join('');
-  var star = '<g class="nd" data-n="o" data-act="goto" data-id="" data-field="o" tabindex="0" role="button" aria-label="O 最終目的"><path class="star" transform="translate(985 ' + (cy - 46) + ')" d="M0 -42L7 -8L42 0L7 8L0 42L-7 8L-42 0L-7 -8Z"/><text class="nl o" x="985" y="' + (cy - 40) + '" text-anchor="middle">O</text>' + txt(wrap(p.o, 11, 4), 985, cy + 18, 19, 'nt', 'middle') + '</g>';
+  var star = '<g class="nd" data-n="o" data-act="goto" data-id="" data-field="o" tabindex="0" role="button" aria-label="O 最終目的"><path class="star" transform="translate(' + OX + ' ' + (cy - 46) + ')" d="M0 -42L7 -8L42 0L7 8L0 42L-7 8L-42 0L-7 -8Z"/><text class="nl o" x="' + OX + '" y="' + (cy - 40) + '" text-anchor="middle">O</text>' + txt(wrap(p.o, 11, 4), OX, cy + 18, 19, 'nt', 'middle') + '</g>';
   var harbor = '<g><path class="anchor" transform="translate(58 ' + (cy - 12) + ')" d="M0 -20a6 6 0 1 0 .1 0M0 -8V22M-12 0H12M-20 8Q-18 24 0 24Q18 24 20 8"/><text class="nt" x="58" y="' + (cy + 36) + '" text-anchor="middle">現在</text></g>';
-  return '<div class="mapwrap"><svg class="map" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="OGSM 航線圖：策略支援目標的關係">' + grid + depth + e + harbor + b + star + '</svg></div><p class="small legend"><span><svg width="34" height="10" aria-hidden="true"><path d="M0 5H34" stroke="var(--route)" stroke-width="5"/></svg> 航線越粗，預估補的缺口越多</span><span><svg width="34" height="10" aria-hidden="true"><path d="M0 5H34" stroke="var(--route)" stroke-width="2" stroke-dasharray="5 4"/></svg> 還沒估貢獻</span><span>● 補得滿　◆ 要留意　▼ 不夠或沒人支援</span></p>';
+  return '<div class="mapwrap"><svg class="map" style="min-width:' + (50 + maxD * 12) + 'rem" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="OGSM 航線圖：策略支援目標的關係">' + grid + depth + e + harbor + b + star + '</svg></div><p class="small legend"><span><svg width="34" height="10" aria-hidden="true"><path d="M0 5H34" stroke="var(--route)" stroke-width="5"/></svg> 航線越粗，預估補的缺口越多</span><span><svg width="34" height="10" aria-hidden="true"><path d="M0 5H34" stroke="var(--route)" stroke-width="2" stroke-dasharray="5 4"/></svg> 還沒估貢獻</span>' + (maxD ? '<span><svg width="34" height="10" aria-hidden="true"><path d="M0 5H34" stroke="var(--brass)" stroke-width="3"/></svg> 次目標加起來等於它（虛線：各自帶動它）</span>' : '') + '<span>● 補得滿　◆ 要留意　▼ 不夠或沒人支援</span></p>';
+}
+
+// 目標樹：O 在左，大 G 往右長出次目標 g（有次目標才出現，列印也印）
+function treeSvg(p){
+  var L = D.labels(p), leaves = p.goals.filter(function(g){ return !D.kids(p, g.id).length; }), maxD = 0, y = {}, RH = 62, BH = 50, BW = 250, GAP = 56, OW = 190, b = '', e = '';
+  p.goals.forEach(function(g){ maxD = Math.max(maxD, D.depthOf(p, g)); });
+  var H = leaves.length * RH + 16, W = OW + (maxD + 1) * (BW + GAP) + 12, cy = H / 2;
+  function X(d){ return OW + GAP + 6 + d * (BW + GAP); }
+  (function place(g){ var c = D.kids(p, g ? g.id : ''); c.forEach(place); if(g) y[g.id] = c.length ? c.reduce(function(a, x){ return a + y[x.id]; }, 0) / c.length : 8 + RH * (leaves.indexOf(g) + .5); else if(c.length) cy = c.reduce(function(a, x){ return a + y[x.id]; }, 0) / c.length; })(null);
+  p.goals.forEach(function(g){
+    var d = D.depthOf(p, g), q = g.up && D.goalById(p, g.up), x1 = q ? X(d) - GAP : OW + 6, y1 = q ? y[q.id] : cy, m = x1 + GAP / 2;
+    e += '<path class="tl' + (q && q.roll !== 'sum' ? ' dash' : '') + '" d="M' + x1 + ' ' + y1 + 'H' + m + 'V' + y[g.id] + 'H' + X(d) + '"/>';
+    b += '<g class="tn d' + d + '"' + (V.share ? '' : ' data-act="goto" data-id="' + g.id + '" data-field="t" tabindex="0" role="button"') + ' aria-label="' + esc(L[g.id] + ' ' + g.t) + '"><rect x="' + X(d) + '" y="' + (y[g.id] - BH / 2) + '" width="' + BW + '" height="' + BH + '" rx="5"/><text class="t1" x="' + (X(d) + 10) + '" y="' + (y[g.id] - 4) + '">' + esc(L[g.id] + ' ' + wrap(g.t, 12, 1)[0]) + '</text><text class="t2" x="' + (X(d) + 10) + '" y="' + (y[g.id] + 15) + '">' + esc((g.base === '' ? '' : fmt(g.base) + ' → ') + fmt(g.target) + ' ' + g.unit + (D.kids(p, g.id).length ? '　' + (g.roll === 'sum' ? '＝次目標加總' : '←次目標帶動') : '')) + '</text></g>';
+  });
+  var ol = wrap(p.o, 12, 5), oh = Math.max(56, ol.length * 18 + 34);
+  return '<svg class="gtree" style="min-width:' + Math.round(W / 22) + 'rem" viewBox="0 ' + Math.min(0, cy - oh / 2 - 4) + ' ' + W + ' ' + (Math.max(H, cy + oh / 2 + 4) - Math.min(0, cy - oh / 2 - 4)) + '" role="img" aria-label="目標樹：O 往下展開成 G 與次目標 g">' + e + '<rect class="tro" x="6" y="' + (cy - oh / 2) + '" width="' + OW + '" height="' + oh + '" rx="5"/><text class="to" x="16" y="' + (cy - oh / 2 + 20) + '">O 最終目的</text>' + txt(ol, 16, cy - oh / 2 + 40, 18, 'to2') + b + '</svg>';
 }
 
 /* ---------- ② 一頁 OGSM ---------- */
@@ -185,14 +219,16 @@ function pageHTML(){
   h += '<div class="card noprint mapcard"><h3>航線圖</h3>' + mapSvg(p) + '</div>';
   h += '<div class="sheet"><header><h2>' + esc(p.name) + '</h2><span>' + esc(p.unit) + (p.from || p.to ? '　' + esc(p.from) + '～' + esc(p.to) : '') + '</span></header>';
   h += '<div class="so"><b class="big">O</b><div><small>最終目的</small><p>' + (esc(p.o) || '（未填）') + '</p></div></div>';
-  h += '<div class="sg"><b class="big">G</b><div class="gs">' + (p.goals.length ? p.goals.map(function(g){ return '<div class="gc"><b>' + L[g.id] + ' ' + (esc(g.t) || '（未命名）') + '</b><span class="num">' + (g.base === '' ? '' : fmt(g.base) + ' → ') + '<strong>' + fmt(g.target) + '</strong> ' + esc(g.unit) + '</span><small>' + (g.due ? esc(g.due) + ' 前' : '沒有期限') + (g.dir === 'down' ? '・越低越好' : '') + (g.guess ? '・AI 推測未確認' : '') + '</small></div>'; }).join('') : '<p>（未填）</p>') + '</div></div>';
-  h += '<div class="tw"><table class="st"><thead><tr><th><b class="big">S</b> 策略</th><th><b class="big">M</b> 衡量指標</th><th><b class="big">M</b> 行動</th></tr></thead><tbody>' + p.strats.map(function(s){
+  function gcard(g){ var cs = D.kids(p, g.id); return '<div class="gc"><b>' + L[g.id] + ' ' + (esc(g.t) || '（未命名）') + '</b><span class="num">' + (g.base === '' ? '' : fmt(g.base) + ' → ') + '<strong>' + fmt(g.target) + '</strong> ' + esc(g.unit) + '</span><small>' + (g.due ? esc(g.due) + ' 前' : '沒有期限') + (g.dir === 'down' ? '・越低越好' : '') + (g.guess ? '・AI 推測未確認' : '') + '</small>' + (cs.length ? '<div class="gsub"><small>' + D.ROLL[g.roll] + '</small>' + cs.map(gcard).join('') + '</div>' : '') + '</div>'; }
+  h += '<div class="sg"><b class="big">G</b><div class="gs">' + (p.goals.length ? D.kids(p, '').map(gcard).join('') : '<p>（未填）</p>') + '</div></div>';
+  h += '<div class="tw"><table class="st"><thead><tr><th><b class="big">S</b> 策略</th><th><b class="big">M</b> 衡量指標 Dashboard</th><th><b class="big">M</b> 行動計畫 Action Plans</th></tr></thead><tbody>' + p.strats.map(function(s){
     var lk = D.linkText(p, s, L);
     return '<tr><td><b>' + L[s.id] + ' ' + (esc(s.t) || '（未填）') + '</b>' + (s.how ? '<p>' + esc(s.how) + '</p>' : '') + (s.not ? '<p class="not">✕ ' + esc(s.not) + '</p>' : '') + '<small>支援 ' + (lk || '—') + '</small></td><td>' + (s.kpis.map(function(k){ return '<div class="li"><b>' + L[k.id] + '</b> ' + esc(k.t || '（未命名）') + ' <span class="num">' + (k.base === '' ? '' : fmt(k.base) + '→') + fmt(k.target) + ' ' + esc(k.unit) + '</span><small>' + D.FREQ[k.freq] + '・' + esc(k.owner || '未指定') + '・' + (k.lead ? '領先' : '落後') + (k.guess ? '・AI 推測未確認' : '') + '</small></div>'; }).join('') || '—') + '</td><td>' + (s.acts.map(function(a){ return '<div class="li"><b>' + L[a.id] + '</b> ' + esc(a.t || '（未填）') + '<small>' + esc(a.owner || '未指定') + (a.to ? '・' + a.to : '') + '・' + D.ST[a.st] + (a.cost === '' ? '' : '・' + fmt(a.cost) + ' 元') + '</small></div>'; }).join('') || '—') + '</td></tr>';
   }).join('') + '</tbody></table></div></div>';
+  if(p.goals.some(function(g){ return g.up; })) h += '<div class="card treecard"><h3>目標樹</h3><div class="tw">' + treeSvg(p) + '</div><p class="small">實線：次目標加起來等於它。虛線：次目標各自帶動它。</p></div>';
   if(p.goals.length && p.strats.length){
-    h += '<div class="card matrix"><h3>誰撐哪個目標</h3><p class="small">格子裡是每條策略預估能補的量；加起來要蓋過缺口。</p><div class="tw"><table class="mx"><thead><tr><th>目標</th><th>缺口</th>' + p.strats.map(function(s){ return '<th title="' + esc(s.t) + '">' + L[s.id] + '</th>'; }).join('') + '<th>合計</th><th>判斷</th></tr></thead><tbody>' + p.goals.map(function(g){
-      var c = D.coverage(p, g); return '<tr><th>' + L[g.id] + ' ' + esc(g.t) + (g.unit ? '（' + esc(g.unit) + '）' : '') + '</th><td class="num">' + fmt(c.gap) + '</td>' + p.strats.map(function(s){ return D.has(s.links, g.id) ? '<td class="num on">' + (s.links[g.id] === '' ? '未估' : fmt(s.links[g.id])) + '</td>' : '<td class="num off">·</td>'; }).join('') + '<td class="num"><b>' + fmt(c.sum) + '</b></td><td>' + covChip(p, g) + '</td></tr>';
+    h += '<div class="card matrix"><h3>誰撐哪個目標</h3><p class="small">格子裡是每條策略預估能補的量；加起來要蓋過缺口。「次目標加起來等於它」的大 G，合計會包含底下次目標的貢獻。</p><div class="tw"><table class="mx"><thead><tr><th>目標</th><th>缺口</th>' + p.strats.map(function(s){ return '<th title="' + esc(s.t) + '">' + L[s.id] + '</th>'; }).join('') + '<th>合計</th><th>判斷</th></tr></thead><tbody>' + p.goals.map(function(g){
+      var c = D.coverage(p, g); return '<tr><th class="gl' + D.depthOf(p, g) + '">' + L[g.id] + ' ' + esc(g.t) + (g.unit ? '（' + esc(g.unit) + '）' : '') + '</th><td class="num">' + fmt(c.gap) + '</td>' + p.strats.map(function(s){ return D.has(s.links, g.id) ? '<td class="num on">' + (s.links[g.id] === '' ? '未估' : fmt(s.links[g.id])) + '</td>' : '<td class="num off">·</td>'; }).join('') + '<td class="num"><b>' + fmt(c.sum) + '</b></td><td>' + covChip(p, g) + '</td></tr>';
     }).join('') + '</tbody></table></div></div>';
   }
   return h;
@@ -204,7 +240,7 @@ function checkHTML(){
   if(V.filter === 'bad' && !bad.length || V.filter === 'warn' && !warn.length) V.filter = 'all';
   var show = V.filter === 'bad' ? bad : V.filter === 'warn' ? warn : l;
   var h = '<div class="card scorecard"><div class="gauge">' + gaugeSvg(sc.v) + '</div><div><h3>' + sc.verdict + '</h3><p>🔴 一定要補 <b>' + bad.length + '</b>　🟡 建議再看 <b>' + warn.length + '</b></p><p class="small">分數是自訂的經驗法則：紅燈扣 8、黃燈扣 3，同一種問題最多扣兩次。高分代表寫得完整、接得起來，不代表策略會成功。</p><div class="btns noprint"><button class="btn" data-act="aiAdvice">✨ 請 AI 給修改建議</button></div></div></div>';
-  h += '<div class="dims">' + ['基本', 'O', 'G', 'S', 'M', '對齊', '展開'].map(function(d){ var x = l.filter(function(i){ return i.dim === d; }), b = x.some(function(i){ return i.lv === 'bad'; }); return '<span class="chip ' + (b ? 'bad' : x.length ? 'warn' : 'ok') + '">' + (b ? '▼' : x.length ? '◆' : '●') + ' ' + d + (x.length ? ' ' + x.length : '') + '</span>'; }).join('') + '</div>';
+  h += '<div class="dims">' + ['基本', 'O', 'G', 'S', 'MD', 'MP', '對齊', '展開'].map(function(d){ var x = l.filter(function(i){ return i.dim === d; }), b = x.some(function(i){ return i.lv === 'bad'; }); return '<span class="chip ' + (b ? 'bad' : x.length ? 'warn' : 'ok') + '">' + (b ? '▼' : x.length ? '◆' : '●') + ' ' + ({MD:'M 衡量指標', MP:'M 行動計畫'}[d] || d) + (x.length ? ' ' + x.length : '') + '</span>'; }).join('') + '</div>';
   if(!l.length) return h + '<div class="card"><p>● 規則檢查沒有發現問題。接下來拿一頁 OGSM 和夥伴討論：每個人讀完，能不能說出自己該做什麼？</p></div>';
   h += '<div class="btns sm noprint">' + [['all', '全部 ' + l.length], ['bad', '🔴 ' + bad.length], ['warn', '🟡 ' + warn.length]].map(function(f){ return '<button class="mini' + (V.filter === f[0] ? ' on' : '') + '" data-filter="' + f[0] + '" aria-pressed="' + (V.filter === f[0]) + '">' + f[1] + '</button>'; }).join('') + '</div>';
   return h + show.map(function(i){ return '<div class="iss ' + i.lv + '"><span class="dot" aria-hidden="true">' + (i.lv === 'bad' ? '▼' : '◆') + '</span><div><b><span class="sr">' + (i.lv === 'bad' ? '紅燈' : '黃燈') + '</span>' + esc(i.t) + '</b><p>' + esc(i.why) + '</p><p class="fix">→ ' + esc(i.fix) + '</p></div><button class="mini noprint" data-act="goto" data-id="' + i.id + '" data-field="' + i.field + '">看這格</button></div>'; }).join('');
@@ -222,19 +258,19 @@ function items(p){ return p.goals.concat(D.kpisOf(p)); }
 function trackHTML(){
   var p = cur(), L = D.labels(p), ym = V.ym = pickYm(p), h = '<h2 class="only-print">' + esc(p.name) + '・月檢討 ' + ym + '</h2>';
   // 追蹤
-  h += '<div class="card"><h3>航海日誌：每月追蹤</h3>';
+  h += '<div class="card"><h3><span class="big m">M</span> 衡量指標 Dashboard：每月追蹤</h3>';
   if(!ym) h += '<p>先到「① 填寫」設定開始日與結束日。</p>';
   else{
     h += '<div class="logbar noprint"><label class="fld inl"><span>月份</span><select id="ymSel">' + D.months(p).map(function(m){ var has = D.has(p.logs, m) && Object.keys(p.logs[m].v).length; return '<option value="' + m + '"' + (m === ym ? ' selected' : '') + '>' + m + (has ? ' ✓' : '') + '</option>'; }).join('') + '</select></label></div><div class="dims" id="sumChips">' + sumChips(p, ym) + '</div>';
-    h += '<p class="small">「水準值」填那個月底的數字；「累計值」只填當月發生的量，工具會加總。應達值是從起點到目標走直線的位置（累計值從 0 起算）。</p><div class="tw"><table class="tr"><thead><tr><th>項目</th><th>起點→目標</th><th>' + ym + ' 填入</th><th>目前</th><th>應達</th><th>完成</th><th>狀態</th><th>走勢</th></tr></thead><tbody>' + items(p).map(function(x){ return '<tr data-tr="' + x.id + '"><th><b>' + L[x.id] + '</b> ' + esc(x.t || '（未命名）') + '<small>' + (x.acc === 'sum' ? '累計值' : '水準值') + (x.dir === 'down' ? '・越低越好' : '') + (x.owner ? '・' + esc(x.owner) : '') + '</small></th><td class="num">' + fmt(x.base) + '→' + fmt(x.target) + ' ' + esc(x.unit) + '</td><td><input class="vin" type="number" step="any" inputmode="decimal" data-val="' + x.id + '" aria-label="' + esc(L[x.id] + ' ' + x.t + ' ' + ym) + '" value="' + esc(D.valueAt(p, x.id, ym) == null ? '' : D.valueAt(p, x.id, ym)) + '"></td>' + trCells(p, x, ym) + '</tr>'; }).join('') + '</tbody></table></div>';
+    h += '<p class="small">「水準值」填那個月底的數字；「累計值」只填當月發生的量，工具會加總。應達值是從起點到目標走直線的位置（累計值從 0 起算）。大目標是「次目標加起來等於它」時可以不填，會自動加總次目標。</p><div class="tw"><table class="tr"><thead><tr><th>項目</th><th>起點→目標</th><th>' + ym + ' 填入</th><th>目前</th><th>應達</th><th>完成</th><th>狀態</th><th>走勢</th></tr></thead><tbody>' + items(p).map(function(x){ var au = D.ownAt(p, x.id, ym) == null ? D.valueAt(p, x.id, ym) : null; return '<tr data-tr="' + x.id + '"><th class="gl' + (x.id.charAt(0) === 'g' ? D.depthOf(p, x) : 0) + '"><b>' + L[x.id] + '</b> ' + esc(x.t || '（未命名）') + '<small>' + (x.acc === 'sum' ? '累計值' : '水準值') + (x.dir === 'down' ? '・越低越好' : '') + (x.owner ? '・' + esc(x.owner) : '') + '</small></th><td class="num">' + fmt(x.base) + '→' + fmt(x.target) + ' ' + esc(x.unit) + '</td><td><input class="vin" type="number" step="any" inputmode="decimal" data-val="' + x.id + '" aria-label="' + esc(L[x.id] + ' ' + x.t + ' ' + ym) + '" placeholder="' + (au == null ? '' : '自動 ' + fmt(au)) + '" value="' + esc(D.ownAt(p, x.id, ym) == null ? '' : D.ownAt(p, x.id, ym)) + '"></td>' + trCells(p, x, ym) + '</tr>'; }).join('') + '</tbody></table></div>';
     var note = D.has(p.logs, ym) ? p.logs[ym].note : '';
     h += '<label class="fld noprint"><span>' + ym + ' 檢討紀錄：發生什麼事、下個月要調整什麼</span><textarea id="noteBox" rows="3" maxlength="1000">' + esc(note) + '</textarea></label><div class="only-print notep"><b>檢討紀錄</b><p id="notePrint">' + esc(note || '（未填）') + '</p></div><div class="btns noprint"><button class="btn" data-act="aiReview">✨ 請 AI 寫月檢討摘要</button><button class="btn alt" data-act="print">🖨 列印月檢討</button></div>';
   }
   h += '</div>';
   // 行動
   var acts = D.actsOf(p), od = D.overdue(p, today()), as = D.actStats(p);
-  h += '<div class="card"><h3>行動清單</h3><p>完成 <b>' + as.done + '</b>／' + as.n + '　進行中 ' + as.doing + '　未開始 ' + as.todo + (od.length ? '　<span class="chip bad">▼ 逾期 ' + od.length + '</span>' : '') + '</p>';
-  if(acts.length) h += '<div class="tw"><table class="ac"><thead><tr><th>行動</th><th>負責人</th><th>完成日</th><th>狀態</th></tr></thead><tbody>' + acts.map(function(x){ var late = od.some(function(o){ return o.a === x.a; }); return '<tr' + (late ? ' class="late"' : '') + '><th><b>' + x.no + '</b> ' + esc(x.a.t || '（未填）') + '</th><td>' + esc(x.a.owner || '未指定') + '</td><td class="num">' + (x.a.to || '—') + (late ? ' <span class="chip bad">▼ 逾期</span>' : '') + '</td><td><select data-p="a|' + x.a.id + '|st" data-redraw="1" aria-label="' + esc(x.no) + ' 狀態">' + Object.keys(D.ST).map(function(k){ return '<option value="' + k + '"' + (x.a.st === k ? ' selected' : '') + '>' + D.ST[k] + '</option>'; }).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>';
+  h += '<div class="card"><h3><span class="big m">M</span> 行動計畫 Action Plans</h3><p>完成 <b>' + as.done + '</b>／' + as.n + '　進行中 ' + as.doing + '　未開始 ' + as.todo + (od.length ? '　<span class="chip bad">▼ 逾期 ' + od.length + '</span>' : '') + '</p>';
+  if(acts.length) h += '<div class="tw"><table class="ac"><thead><tr><th>行動</th><th>負責人</th><th>完成日</th><th>時程</th><th>狀態</th></tr></thead><tbody>' + acts.map(function(x){ var late = od.some(function(o){ return o.a === x.a; }); return '<tr' + (late ? ' class="late"' : '') + '><th><b>' + x.no + '</b> ' + esc(x.a.t || '（未填）') + '</th><td>' + esc(x.a.owner || '未指定') + '</td><td class="num">' + (x.a.to || '—') + (late ? ' <span class="chip bad">▼ 逾期</span>' : '') + '</td><td>' + gantt(p, x.a, late) + '</td><td><select data-p="a|' + x.a.id + '|st" data-redraw="1" aria-label="' + esc(x.no) + ' 狀態">' + Object.keys(D.ST).map(function(k){ return '<option value="' + k + '"' + (x.a.st === k ? ' selected' : '') + '>' + D.ST[k] + '</option>'; }).join('') + '</select></td></tr>'; }).join('') + '</tbody></table></div>';
   h += '</div>';
   // 展開
   h += '<div class="card noprint"><h3>艦隊：往下展開</h3><p class="small">上層的一條策略（S）交給一個部門，就變成那個部門的目的（O）；上層的衡量指標（M）變成部門的目標（G）。</p><ul class="tree">' + (function walk(ns){ return ns.map(function(n){ var l = D.check(n.p, S.plans), ci = D.cascadeIssues(n.p, S.plans), s = D.score(l).v; return '<li><div class="node' + (n.p.id === S.cur ? ' me' : '') + '"><b>' + esc(n.p.name) + '</b><span class="small">健檢 ' + s + (ci.length ? '　<span class="chip warn">◆ 沒接上 ' + ci.length + '</span>' : '') + '</span>' + (n.p.id === S.cur ? '<span class="chip ok">● 目前這份</span>' : '<button class="mini" data-act="open" data-id="' + n.p.id + '">打開</button>') + '</div>' + (n.kids.length ? '<ul>' + walk(n.kids) + '</ul>' : '') + '</li>'; }).join(''); })(D.tree(S.plans)) + '</ul>';
@@ -243,6 +279,12 @@ function trackHTML(){
   if(p.parent) h += '<div class="btns"><button class="btn alt" data-act="sync">⚓ 跟上層同步</button><button class="btn alt" data-act="unlink">解除和上層的連結</button></div>';
   if(p.strats.length) h += '<div class="row casc"><label class="fld"><span>要展開的策略</span><select id="cSel">' + p.strats.map(function(s){ return '<option value="' + s.id + '">' + L[s.id] + ' ' + esc(s.t.slice(0, 30) || '（未填）') + (D.childrenOf(S.plans, p.id, s.id).length ? '（已展開 ' + D.childrenOf(S.plans, p.id, s.id).length + '）' : '') + '</option>'; }).join('') + '</select></label><label class="fld"><span>交給哪個部門或誰</span><input id="cUnit" maxlength="30" placeholder="例如 早班小組"></label><div class="fld"><span>&nbsp;</span><button class="btn" data-act="cascade">展開成下一層 OGSM</button></div></div>';
   return h + '</div>';
+}
+// 行動時程條：整條是規劃期間，黑線是今天
+function gantt(p, a, late){
+  if(!p.from || !p.to || p.from >= p.to || !a.to) return '—';
+  var d0 = Date.parse(p.from), d1 = Date.parse(p.to), f = function(x){ return Math.max(0, Math.min(100, (Date.parse(x) - d0) / (d1 - d0) * 100)); }, l = f(a.from || a.to), r = f(a.to), t = today();
+  return '<span class="gantt" title="' + (a.from || '？') + '～' + a.to + '"><i class="' + (late ? 'bad' : a.st) + '" style="left:' + l.toFixed(1) + '%;width:' + Math.max(2, r - l).toFixed(1) + '%"></i>' + (t >= p.from && t <= p.to ? '<u style="left:' + f(t).toFixed(1) + '%"></u>' : '') + '</span>';
 }
 function sumChips(p, ym){ var c = D.summary(p, ym), k = {done:'ok', ahead:'ok', ok:'ok', warn:'warn', bad:'bad', na:'na'}; return Object.keys(D.STATUS).filter(function(s){ return c[s]; }).map(function(s){ return '<span class="chip ' + k[s] + '">' + D.STATUS[s][1] + ' ' + D.STATUS[s][0] + ' ' + c[s] + '</span>'; }).join(''); }
 function trCells(p, x, ym){
@@ -263,8 +305,8 @@ function spark(p, x){
 
 /* ---------- ⑤ 說明 ---------- */
 function aboutHTML(){
-  return '<div class="card"><h3>OGSM 是什麼</h3><p>把一份策略壓在一頁紙上的寫法，四層由大到小接起來：</p><div class="tw"><table class="ab"><tbody>' +
-    [['O', '最終目的 Objective', '要去哪裡', '一句話，講方向，不放數字', '北極星'], ['G', '具體目標 Goals', '怎麼算到了', '2～4 個數字，有起點、目標、期限', '航點'], ['S', '策略 Strategies', '走哪條路', '3～5 條做法，講清楚不做什麼', '航線'], ['M', '衡量 Measures', '有沒有偏航', '指標＋行動，有負責人與日期', '儀表']].map(function(r){ return '<tr><th><b class="big">' + r[0] + '</b></th><td><b>' + r[1] + '</b><br>' + r[2] + '</td><td>' + r[3] + '</td><td class="small">海圖上的' + r[4] + '</td></tr>'; }).join('') + '</tbody></table></div></div>' +
+  return '<div class="card"><h3>OGSM 是什麼</h3><p>把一份策略壓在一頁紙上的寫法，四層由大到小接起來，其中 M 再分成衡量指標與行動計畫兩塊：</p><div class="tw"><table class="ab"><tbody>' +
+    [['O', '最終目的 Objective', '要去哪裡', '一句話，講方向，不放數字', '北極星'], ['G', '具體目標 Goals', '怎麼算到了', '2～4 個數字，有起點、目標、期限；大 G 可以往下拆成次目標 g', '航點'], ['S', '策略 Strategies', '走哪條路', '3～5 條做法，講清楚不做什麼', '航線'], ['M', '衡量指標 Dashboard', '有沒有偏航', '看哪個數字、多久看一次、誰負責；領先與落後都要有', '儀表'], ['M', '行動計畫 Action Plans', '誰在什麼時候做什麼', '要做的事、負責人、起訖日、預算', '值班表']].map(function(r){ return '<tr><th><b class="big">' + r[0] + '</b></th><td><b>' + r[1] + '</b><br>' + r[2] + '</td><td>' + r[3] + '</td><td class="small">海圖上的' + r[4] + '</td></tr>'; }).join('') + '</tbody></table></div></div>' +
     '<div class="card"><h3>和 KPI、OKR 差在哪</h3><ul><li><b>KPI</b> 是一個一個的數字。OGSM 說明這些數字為了什麼、靠什麼做法達成，KPI 通常放在 M。</li><li><b>OKR</b> 多半一季一次，重點是聚焦與挑戰；OGSM 多半一年一次，多了「策略選擇」和「往下展開」。兩者可以並用：年度用 OGSM，季度用 OKR 推進其中一條策略。</li></ul></div>' +
     '<div class="card"><h3>最常見的五個問題</h3><ol><li>O 寫成口號，換一家公司也說得通。</li><li>G 寫成行動（辦幾場活動），做完了也不知道有沒有效。</li><li>S 沒有取捨，什麼都「加強」。</li><li>S 加起來根本補不滿 G 的缺口，卻沒有人算過。</li><li>M 全是月底才知道的結果，沒有過程中看得到的指標。</li></ol><p class="small">以上是這個工具作者整理的觀察，不是標準答案。詳細步驟看 <a href="manual.html">📖 操作手冊</a>。</p></div>';
 }
@@ -405,12 +447,13 @@ var ACT = {
   shareSave:function(){ var p = D.clone(V.share); clearHash(); addPlans([p], '已存成你的一份'); },
   shareExit:function(){ clearHash(); render(); },
   // 增刪移動
+  addSub:function(ds){ var q = find('g', ds.id), g = D.newGoal({up:q.id, due:q.due, dir:q.dir, acc:q.acc, unit:q.roll === 'sum' ? q.unit : ''}); change(function(p){ p.goals.push(g); D.orderGoals(p); }); focusP('g|' + g.id + '|t'); },
   addGoal:function(){ var g = D.newGoal({due:cur().to}); change(function(p){ p.goals.push(g); }); focusP('g|' + g.id + '|t'); },
   addStrat:function(){ var s = D.newStrat({kpis:[D.newKpi()], acts:[D.newAct()]}); V.fold[s.id] = false; change(function(p){ p.strats.push(s); }); focusP('s|' + s.id + '|t'); },
   addKpi:function(ds){ var k = D.newKpi(); change(function(){ find('s', ds.id).kpis.push(k); }); focusP('k|' + k.id + '|t'); },
   addAct:function(ds){ var a = D.newAct(); change(function(){ find('s', ds.id).acts.push(a); }); focusP('a|' + a.id + '|t'); },
-  move:function(ds){ var l = listOf(ds.kind, ds.id), i = l.map(function(x){ return x.id; }).indexOf(ds.id), j = i + Number(ds.d); if(j < 0 || j >= l.length) return; change(function(){ var t = l[i]; l[i] = l[j]; l[j] = t; }); var b = document.querySelector('[data-act="move"][data-id="' + ds.id + '"][data-d="' + ds.d + '"]'); if(b && !b.disabled) b.focus({preventScroll:true}); },
-  del:function(ds){ change(function(p){ if(ds.kind === 'g') D.removeGoal(p, ds.id); else{ var l = listOf(ds.kind, ds.id), i = l.map(function(x){ return x.id; }).indexOf(ds.id); l.splice(i, 1); } }); toast('已刪除', 'undo'); },
+  move:function(ds){ if(ds.kind === 'g'){ change(function(p){ D.moveGoal(p, ds.id, Number(ds.d)); }); var gb = document.querySelector('[data-act="move"][data-id="' + ds.id + '"][data-d="' + ds.d + '"]'); if(gb && !gb.disabled) gb.focus({preventScroll:true}); return; } var l = listOf(ds.kind, ds.id), i = l.map(function(x){ return x.id; }).indexOf(ds.id), j = i + Number(ds.d); if(j < 0 || j >= l.length) return; change(function(){ var t = l[i]; l[i] = l[j]; l[j] = t; }); var b = document.querySelector('[data-act="move"][data-id="' + ds.id + '"][data-d="' + ds.d + '"]'); if(b && !b.disabled) b.focus({preventScroll:true}); },
+  del:function(ds){ var k = 1; change(function(p){ if(ds.kind === 'g') k = D.removeGoal(p, ds.id); else{ var l = listOf(ds.kind, ds.id), i = l.map(function(x){ return x.id; }).indexOf(ds.id); l.splice(i, 1); } }); toast(k > 1 ? '已刪除，連同 ' + (k - 1) + ' 個次目標' : '已刪除', 'undo'); },
   confirmNum:function(ds){ var x = find(ds.kind, ds.id); if(x){ x.guess = false; save(); qa('[data-guess="' + ds.id + '"]').forEach(function(e){ e.remove(); }); light(); } },
   fold:function(ds, el){ V.fold[ds.id] = el.getAttribute('aria-expanded') === 'true'; render(); var b = document.querySelector('[data-act="fold"][data-id="' + ds.id + '"]'); if(b) b.focus({preventScroll:true}); },
   goto:function(ds){ gotoField(ds.id, ds.field); },
@@ -482,6 +525,7 @@ function setField(t){
   else if(t.type === 'date') v = D.isDate(v) ? v : '';
   else if(f === 'lead') v = v === '1';
   if((f === 'base' || f === 'target') && x.guess){ x.guess = false; qa('[data-guess="' + x.id + '"]').forEach(function(e){ e.remove(); }); }
+  if(f === 'up'){ D.setUp(cur(), x.id, v); save(); return; }
   x[f] = f === 'name' ? v || '未命名的 OGSM' : v;
   save(); light();
 }
@@ -494,6 +538,7 @@ document.addEventListener('input', function(ev){
   if(t.id === 'aiBg') V.bg = t.value;
 });
 function trackRow(id){
+  var up = D.goalById(cur(), id); if(up && up.up){ var pin = document.querySelector('[data-val="' + up.up + '"]'), pv = D.ownAt(cur(), up.up, V.ym) == null ? D.valueAt(cur(), up.up, V.ym) : null; if(pin) pin.placeholder = pv == null ? '' : '自動 ' + fmt(pv); trackRow(up.up); }
   var p = cur(), x = items(p).filter(function(i){ return i.id === id; })[0], tr = document.querySelector('tr[data-tr="' + id + '"]'); if(!x || !tr) return;
   qa('.c-d', tr).forEach(function(e){ e.remove(); }); tr.insertAdjacentHTML('beforeend', trCells(p, x, V.ym)); $('sumChips').innerHTML = sumChips(p, V.ym);
 }

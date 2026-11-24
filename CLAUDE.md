@@ -8,6 +8,8 @@
 
 ## 規則（`data.js`，全部是自訂經驗法則；改了跑 `node tools/test_engine.mjs`）
 - **缺口 `coverage`**：缺口＝目標與起點的差（依方向），各策略 `links[目標id]` 的預估貢獻加總。<80% `short` 紅、<100% `near` 黃、>150% `over` 黃、有人沒估且還不夠 `unest` 黃、沒人支援 `none` 紅；起點空白或缺口 ≤0 為 `na`。
+- **目標樹**（2026-11-24 使用者要求）：`goals` 是平的清單，`up`＝上層目標 id（''＝大 G），最多三層（`LIM.depth`）、全部 40 個；`fixTree`／`orderGoals` 讓清單永遠照樹的順序排，順序改動一律走 `moveGoal`／`setUp`／`removeGoal`（連次目標一起刪）。編號 G1、g1.1、g1.1.1。有次目標的目標有 `roll`：`sum`＝次目標加起來等於它（`subSum` 檢查單位／方向／類型與合計、`coverage` 往上彙總、每月沒填時 `valueAt` 自動加總，自己填的優先 `ownAt`）、`drive`＝各自帶動（`coverage` 回 `via`／`viaBad`）。沒人支援只標葉子。
+- **M 分兩塊**（使用者要求）：衡量指標 Dashboard（`kpis`，編號 MD、健檢 `MD`）與行動計畫 Action Plans（`acts`，編號 MP、健檢 `MP`，追蹤頁有甘特時程條）。
 - **健檢 `check`**：約 50 種代碼（O 口號／數字／太長、G 缺數值期限／像行動／方向相反、S 空泛／沒取捨／沒支援、M 只有落後／照抄目標／缺負責人、行動日期、預算、一人超過 8 項、上下層）。`hasTargetNumber` 會先拿掉年份、期限、「第 1」、B2B 這類再判斷。紅燈 −8、黃燈 −3，同一代碼最多扣兩次。
 - **進度 `progress`**：`acc:'level'` 水準值＝當月數字，從起點到目標走直線；`acc:'sum'` 累計值＝逐月加總，應達從 **0** 到目標（起點只用來算缺口）。比值＝完成比例÷時間比例：≥1.05 超前、≥.9 正常、≥.7 稍落後。當月沒填就看最近一個有資料的月份（用那個月的時間比例）。累計＋越低越好＝額度制（≤應達正常、≤110% 稍落後）。
 - **展開 `cascade`**：S→下層 O、每個 M→下層 G，`goal.src={k:上層指標id, snap}`；`cascadeIssues` 回 `dropped`／`srcChanged`／`srcGone`／`parentGone`／`childLate`；`syncFromParent` 更新改過的、補上沒人接的（別的下層已接就不重複補）。
@@ -30,5 +32,5 @@
 跑馬燈（工作區公告 GAS，滑鼠移入暫停，不可關）、⚙ 常用設定（收合式：資料／🤖 AI 設定／顯示／關於本工具）、首訪警語＋頁面入口、`manual.html#creator` 完整版（改 `tools/manual_body.html` 後跑 `python tools/build_manual.py`）、PWA、訪客計數器、列印浮水印，無序號。
 
 ## 測試
-- `node tools/test_engine.mjs`：每條健檢規則、缺口、進度手算、跨年、展開斷鏈、整理複製、範例、CSV 公式注入、AI 回覆整理、2000 組亂數，共 2231 項。
-- `python tools/e2e_osp.py [截圖資料夾]`（Playwright，port 8918，擋計數器）：標準配備＋五分頁、復原、健檢跳轉、追蹤、展開同步、分享（含 HTML 注入）、AI（只用模擬回應）、備份、列印 PDF 方向與浮水印、390px，共 124 項。2026-11-24 全過；7 家 AI 未實際連線測試。
+- `node tools/test_engine.mjs`：每條健檢規則、缺口、進度手算、跨年、展開斷鏈、整理複製、範例、CSV 公式注入、AI 回覆整理、2000 組亂數，共 3780 項。
+- `python tools/e2e_osp.py [截圖資料夾]`（Playwright，port 8918，擋計數器）：標準配備＋五分頁、復原、健檢跳轉、追蹤、展開同步、分享（含 HTML 注入）、AI（只用模擬回應）、備份、列印 PDF 方向與浮水印、390px，共 139 項。2026-11-24 全過；7 家 AI 未實際連線測試。

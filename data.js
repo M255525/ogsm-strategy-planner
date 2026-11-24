@@ -4,8 +4,9 @@
 (function(root){
 'use strict';
 
-var LIM = {plans:40, goals:8, strats:8, kpis:6, acts:12, t:200, long:400, note:1000};
+var LIM = {plans:40, goals:8, goalsAll:40, subs:8, depth:3, strats:8, kpis:6, acts:12, t:200, long:400, note:1000};
 var FREQ = {week:'每週', month:'每月', quarter:'每季', year:'每年'};
+var ROLL = {sum:'次目標加起來等於它', drive:'次目標各自帶動它'};
 var ST = {todo:'未開始', doing:'進行中', done:'已完成'};
 var STATUS = {done:['已達標', '★'], ahead:['超前', '▲'], ok:['正常', '●'], warn:['稍落後', '◆'], bad:['落後', '▼'], na:['沒有資料', '－']};
 
@@ -26,12 +27,29 @@ function fmt(v){ if(v === '' || v == null || !isFinite(v)) return '—'; return 
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]; }); }
 
 /* ---------- 資料整理 ---------- */
-function newGoal(x){ return Object.assign({id:uid('g'), t:'', base:'', target:'', unit:'', dir:'up', acc:'level', guess:false, due:'', src:null}, x); }
+function newGoal(x){ return Object.assign({id:uid('g'), t:'', base:'', target:'', unit:'', dir:'up', acc:'level', guess:false, due:'', src:null, up:'', roll:'drive'}, x); }
 function newKpi(x){ return Object.assign({id:uid('k'), t:'', base:'', target:'', unit:'', dir:'up', acc:'level', guess:false, freq:'month', owner:'', lead:true}, x); }
 function newAct(x){ return Object.assign({id:uid('a'), t:'', owner:'', from:'', to:'', cost:'', st:'todo'}, x); }
 function newStrat(x){ return Object.assign({id:uid('s'), t:'', how:'', not:'', links:{}, kpis:[], acts:[]}, x); }
 function newPlan(x){ return Object.assign({id:uid('p'), name:'未命名的 OGSM', unit:'', from:'', to:'', budget:'', parent:null, o:'', goals:[], strats:[], logs:{}}, x); }
 function blankPlan(year){ var p = newPlan({name:'我的 ' + year + ' OGSM', from:year + '-01-01', to:year + '-12-31'}); p.goals = [newGoal({due:p.to})]; p.strats = [newStrat({kpis:[newKpi()], acts:[newAct()]})]; return p; }
+
+/* ---------- 目標樹：大 G 底下可以有次目標 g（最多三層），清單永遠照樹的順序排 ---------- */
+function goalById(plan, id){ var l = plan.goals || []; for(var i = 0; i < l.length; i++) if(l[i].id === id) return l[i]; return null; }
+function kids(plan, id){ return (plan.goals || []).filter(function(g){ return g.up === id; }); }
+function depthOf(plan, g){ var d = 0; while(g && g.up && d < 60){ g = goalById(plan, g.up); d++; } return d; }
+function heightOf(plan, id){ return kids(plan, id).reduce(function(a, g){ return Math.max(a, 1 + heightOf(plan, g.id)); }, 0); }
+function underOf(plan, id){ return kids(plan, id).reduce(function(a, g){ return a.concat([g.id], underOf(plan, g.id)); }, []); }
+function orderGoals(plan){ var out = []; (function walk(id){ kids(plan, id).forEach(function(g){ out.push(g); walk(g.id); }); })(''); plan.goals = out; }
+// 不存在的上層、互為上下層、超過三層的，一律拉回成大 G
+function fixTree(plan){
+  plan.goals.forEach(function(g){ var seen = {}, q = g; seen[g.id] = 1; while(q.up){ var n = goalById(plan, q.up); if(!n || has(seen, n.id)){ q.up = ''; break; } seen[n.id] = 1; q = n; } });
+  plan.goals.forEach(function(g){ if(depthOf(plan, g) >= LIM.depth) g.up = ''; });
+  orderGoals(plan);
+}
+function upOptions(plan, id){ var h = heightOf(plan, id), no = underOf(plan, id).concat([id]), me = goalById(plan, id); return plan.goals.filter(function(g){ return no.indexOf(g.id) < 0 && depthOf(plan, g) + 1 + h < LIM.depth && (g.id === me.up || kids(plan, g.id).length < LIM.subs); }); }
+function setUp(plan, id, up){ var g = goalById(plan, id); if(!g) return false; if(up && !upOptions(plan, id).some(function(x){ return x.id === up; })) return false; if(g.up !== (up || '')){ g.up = up || ''; plan.goals.splice(plan.goals.indexOf(g), 1); plan.goals.push(g); } orderGoals(plan); return true; }
+function moveGoal(plan, id, d){ var g = goalById(plan, id), l = kids(plan, g.up), i = l.indexOf(g), o = l[i + d]; if(!o) return false; var a = plan.goals.indexOf(g), b = plan.goals.indexOf(o); plan.goals[a] = o; plan.goals[b] = g; orderGoals(plan); return true; }
 
 function arr(v, n){ return Array.isArray(v) ? v.filter(function(x){ return x && typeof x === 'object' && !Array.isArray(x); }).slice(0, n) : []; }
 function pickId(v, p, used){ var id = okId(v, p) && !has(used, v) ? v : uid(p); used[id] = 1; return id; }
@@ -42,12 +60,13 @@ function sanitizePlan(x){
   var p = {id:okId(x.id, 'p') ? x.id : uid('p'), name:str(x.name, 60) || '未命名的 OGSM', unit:str(x.unit, 60), from:dateOr(x.from), to:dateOr(x.to), budget:numOr(x.budget), parent:null, o:str(x.o, LIM.long), goals:[], strats:[], logs:{}};
   if(x.parent && okId(x.parent.plan, 'p') && okId(x.parent.s, 's')) p.parent = {plan:x.parent.plan, s:x.parent.s};
   if(p.budget !== '' && p.budget < 0) p.budget = '';
-  p.goals = arr(x.goals, LIM.goals).map(function(g){
-    var r = Object.assign({id:pickId(g.id, 'g', used)}, sanMeasure(g), {due:dateOr(g.due), src:null});
+  p.goals = arr(x.goals, LIM.goalsAll).map(function(g){
+    var r = Object.assign({id:pickId(g.id, 'g', used)}, sanMeasure(g), {due:dateOr(g.due), src:null, up:okId(g.up, 'g') ? g.up : '', roll:g.roll === 'sum' ? 'sum' : 'drive'});
     if(g.src && okId(g.src.k, 'k')) r.src = {k:g.src.k, snap:str(g.src.snap, 500)};
     return r;
   });
   var gids = {}; p.goals.forEach(function(g){ gids[g.id] = 1; });
+  fixTree(p);
   p.strats = arr(x.strats, LIM.strats).map(function(s){
     var r = {id:pickId(s.id, 's', used), t:str(s.t), how:str(s.how, LIM.long), not:str(s.not, LIM.long), links:{}, kpis:[], acts:[]};
     if(s.links && typeof s.links === 'object') Object.keys(s.links).forEach(function(k){ if(has(gids, k)){ var v = numOr(s.links[k]); r.links[k] = v === '' || v < 0 ? '' : v; } });
@@ -78,6 +97,7 @@ function clone(plan, name){
   var map = {}, p = sanitizePlan(JSON.parse(JSON.stringify(plan)));
   p.id = uid('p'); p.parent = null; if(name) p.name = str(name, 60);
   p.goals.forEach(function(g){ var n = uid('g'); map[g.id] = n; g.id = n; g.src = null; });
+  p.goals.forEach(function(g){ g.up = g.up ? map[g.up] : ''; });
   p.strats.forEach(function(s){
     s.id = uid('s'); var l = {}; Object.keys(s.links).forEach(function(k){ l[map[k]] = s.links[k]; }); s.links = l;
     s.kpis.forEach(function(k){ var n = uid('k'); map[k.id] = n; k.id = n; }); s.acts.forEach(function(a){ a.id = uid('a'); });
@@ -85,29 +105,44 @@ function clone(plan, name){
   Object.keys(p.logs).forEach(function(ym){ var v = {}; Object.keys(p.logs[ym].v).forEach(function(k){ if(has(map, k)) v[map[k]] = p.logs[ym].v[k]; }); p.logs[ym].v = v; });
   return p;
 }
-function removeGoal(plan, id){ plan.goals = plan.goals.filter(function(g){ return g.id !== id; }); plan.strats.forEach(function(s){ delete s.links[id]; }); }
+function removeGoal(plan, id){ var no = underOf(plan, id).concat([id]); plan.goals = plan.goals.filter(function(g){ return no.indexOf(g.id) < 0; }); plan.strats.forEach(function(s){ no.forEach(function(k){ delete s.links[k]; }); }); return no.length; }
 function planById(plans, id){ for(var i = 0; i < plans.length; i++) if(plans[i].id === id) return plans[i]; return null; }
 function kpisOf(plan){ return plan.strats.reduce(function(a, s){ return a.concat(s.kpis); }, []); }
-function actsOf(plan){ return plan.strats.reduce(function(a, s, i){ return a.concat(s.acts.map(function(x, j){ return {a:x, s:s, no:'A' + (i + 1) + '.' + (j + 1)}; })); }, []); }
+function actsOf(plan){ return plan.strats.reduce(function(a, s, i){ return a.concat(s.acts.map(function(x, j){ return {a:x, s:s, no:'MP' + (i + 1) + '.' + (j + 1)}; })); }, []); }
 function labels(plan){
-  var r = {}; plan.goals.forEach(function(g, i){ r[g.id] = 'G' + (i + 1); });
-  plan.strats.forEach(function(s, i){ r[s.id] = 'S' + (i + 1); s.kpis.forEach(function(k, j){ r[k.id] = 'M' + (i + 1) + '.' + (j + 1); }); s.acts.forEach(function(a, j){ r[a.id] = 'A' + (i + 1) + '.' + (j + 1); }); });
+  var r = {}; (function walk(id, no){ kids(plan, id).forEach(function(g, i){ var n = no ? no + '.' + (i + 1) : String(i + 1); r[g.id] = (no ? 'g' : 'G') + n; walk(g.id, n); }); })('', '');
+  plan.strats.forEach(function(s, i){ r[s.id] = 'S' + (i + 1); s.kpis.forEach(function(k, j){ r[k.id] = 'MD' + (i + 1) + '.' + (j + 1); }); s.acts.forEach(function(a, j){ r[a.id] = 'MP' + (i + 1) + '.' + (j + 1); }); });
   return r;
 }
 
 /* ---------- 缺口：各策略的預估貢獻加起來夠不夠 ---------- */
+// 有次目標時：roll 'sum'（次目標加起來＝它）把次目標的貢獻一起加上來；'drive'（次目標帶動它）看次目標各自補不補得滿
 function coverage(plan, g){
   var linked = plan.strats.filter(function(s){ return has(s.links, g.id); });
   var est = linked.filter(function(s){ return s.links[g.id] !== ''; });
-  var sum = est.reduce(function(a, s){ return a + s.links[g.id]; }, 0);
+  var sum = est.reduce(function(a, s){ return a + s.links[g.id]; }, 0), nL = linked.length, unest = linked.length - est.length;
+  var cs = kids(plan, g.id).map(function(k){ return coverage(plan, k); });
+  if(cs.length && g.roll === 'sum') cs.forEach(function(c){ sum += c.sum; nL += c.linked; unest += c.unest; });
   var gap = g.base === '' || g.target === '' ? null : g.dir === 'down' ? g.base - g.target : g.target - g.base;
   if(gap != null) gap = Math.round(gap * 1e9) / 1e9;
   var st, ratio = gap != null && gap > 0 ? sum / gap : null;
-  if(!linked.length) st = 'none';
+  if(!nL) st = 'none';
   else if(gap == null || gap <= 0) st = 'na';
-  else if(est.length < linked.length && ratio < 1 - 1e-9) st = 'unest';
+  else if(unest && ratio < 1 - 1e-9) st = 'unest';
   else st = ratio < .8 - 1e-9 ? 'short' : ratio < 1 - 1e-9 ? 'near' : ratio > 1.5 + 1e-9 ? 'over' : 'ok';
-  return {gap:gap, sum:sum, ratio:ratio, short:gap == null ? null : Math.max(0, gap - sum), linked:linked.length, unest:linked.length - est.length, st:st};
+  if(cs.length && g.roll !== 'sum' && st !== 'ok' && st !== 'over'){
+    if(cs.some(function(c){ return c.st !== 'none'; })) st = cs.some(function(c){ return c.st === 'none' || c.st === 'short' || c.st === 'viaBad'; }) ? 'viaBad' : 'via';
+  }
+  return {gap:gap, sum:sum, ratio:ratio, short:gap == null ? null : Math.max(0, gap - sum), linked:nL, unest:unest, st:st};
+}
+// 「加起來等於它」的次目標：能不能加、加起來夠不夠
+function subSum(plan, g){
+  var cs = kids(plan, g.id); if(!cs.length || g.roll !== 'sum') return null;
+  if(cs.some(function(c){ return norm(c.unit) !== norm(g.unit) || (c.unit || '').indexOf('%') >= 0 !== (g.unit || '').indexOf('%') >= 0 || c.dir !== g.dir || c.acc !== g.acc; })) return {st:'mix', total:null};
+  if(g.target === '' || cs.some(function(c){ return c.target === ''; })) return {st:'na', total:null};
+  var total = Math.round(cs.reduce(function(a, c){ return a + c.target; }, 0) * 1e9) / 1e9, diff = g.dir === 'down' ? total - g.target : g.target - total;
+  diff = Math.round(diff * 1e9) / 1e9;
+  return {st:diff <= 0 ? 'ok' : Math.abs(diff) > Math.abs(g.target) * .2 + 1e-9 ? 'bad' : 'warn', total:total, diff:Math.max(0, diff)};
 }
 
 /* ---------- 邏輯健檢（自訂經驗法則，僅供參考） ---------- */
@@ -137,7 +172,8 @@ function check(plan, plans){
   }
   // G
   if(!plan.goals.length) add('bad', 'G', 'gNone', '', 'addGoal', '還沒有任何 G（量化目標）', '沒有數字，就不知道 O 算不算達成。', '先寫 2～4 個最能代表 O 的數字。');
-  if(plan.goals.length > 5) add('warn', 'G', 'gMany', '', 'addGoal', 'G 有 ' + plan.goals.length + ' 個，偏多', '目標太多等於沒有重點。', '留 3～5 個，其餘改成策略底下的指標。');
+  var tops = kids(plan, '').length;
+  if(tops > 5) add('warn', 'G', 'gMany', '', 'addGoal', '大 G 有 ' + tops + ' 個，偏多', '目標太多等於沒有重點。', '留 3～5 個，其餘改成某個 G 底下的次目標，或策略底下的指標。');
   var gseen = {};
   plan.goals.forEach(function(g){
     if(!g.t.trim()) add('bad', 'G', 'gEmpty', g.id, 't', L[g.id] + ' 沒有名稱', '看不出要量什麼。', '寫指標名稱，例如「回購率」「年營收」。');
@@ -154,6 +190,12 @@ function check(plan, plans){
       if((g.dir === 'up' && g.target < g.base) || (g.dir === 'down' && g.target > g.base)) add('bad', 'G', 'gDir', g.id, 'dir', L[g.id] + ' 方向相反', '設定' + (g.dir === 'up' ? '越高越好，目標卻比起點低' : '越低越好，目標卻比起點高') + '。', '檢查起點、目標或方向。');
       else if(g.target === g.base) add('warn', 'G', 'gFlat', g.id, 'target', L[g.id] + ' 起點等於目標', '這是「維持」，不是往前走。', '確定要維持就保留；不是的話調整目標值。');
     }
+    var cs = kids(plan, g.id), ss = subSum(plan, g);
+    if(cs.length === 1) add('warn', 'G', 'gSubOne', cs[0].id, 't', L[g.id] + ' 只有一個次目標', '只拆成一個，等於換句話說。', '再拆出其他部分，或直接併回 ' + L[g.id] + '。');
+    if(cs.length > 5) add('warn', 'G', 'gSubMany', g.id, 't', L[g.id] + ' 有 ' + cs.length + ' 個次目標，偏多', '拆太細，重點會散掉。', '留最關鍵的 2～5 個。');
+    cs.forEach(function(c){ if(c.due && g.due && c.due > g.due) add('warn', 'G', 'gSubLate', c.id, 'due', L[c.id] + ' 的期限晚於 ' + L[g.id], '次目標還沒到，上面的目標就要驗收了。', '把次目標的期限提前。'); });
+    if(ss && ss.st === 'mix') add('warn', 'G', 'gSubMix', g.id, 'roll', L[g.id] + ' 的次目標不能直接加總', '單位、方向或數字類型（水準值／累計值）不一樣。', '改成一致，或把關係改成「次目標各自帶動它」。');
+    if(ss && (ss.st === 'bad' || ss.st === 'warn')) add(ss.st, 'G', 'gSubShort', g.id, 'roll', L[g.id] + ' 的次目標加起來' + (g.dir === 'down' ? '超過 ' : '還差 ') + fmt(ss.diff) + (g.unit ? ' ' + g.unit : ''), '次目標合計 ' + fmt(ss.total) + '，' + L[g.id] + ' 的目標是 ' + fmt(g.target) + '。', '調整次目標，或補上漏掉的部分。');
     if(g.guess) add('warn', 'G', 'gGuess', g.id, 'target', L[g.id] + ' 的數字是 AI 推測的', '還沒有人確認過。', '改成真實數字，或按「確認數字」。');
   });
   // S
@@ -170,33 +212,33 @@ function check(plan, plans){
     if(!s.not.trim()) add('warn', 'S', 'sNot', s.id, 'not', L[s.id] + ' 沒寫「不做什麼」', '沒有取捨就不算策略。', '寫一件為了這條策略而放掉的事。');
     if(plan.goals.length && !Object.keys(s.links).length) add('bad', '對齊', 'sNoLink', s.id, 'links', L[s.id] + ' 沒有支援任何目標', '做了也不知道對哪個數字有幫助。', '勾選它支援的 G；如果都沒有，考慮拿掉。');
     // M
-    if(!s.kpis.length) add('bad', 'M', 'mNone', s.id, 'addKpi', L[s.id] + ' 沒有衡量指標', '不知道這條策略有沒有效。', '至少加一個指標。');
-    else if(s.kpis.every(function(x){ return !x.lead; })) add('warn', 'M', 'mLag', s.kpis[0].id, 'lead', L[s.id] + ' 只有落後指標', '等結果出來才知道，來不及調整。', '加一個過程中就看得到的領先指標，例如每週聯絡數。');
+    if(!s.kpis.length) add('bad', 'MD', 'mNone', s.id, 'addKpi', L[s.id] + ' 沒有衡量指標', '不知道這條策略有沒有效。', '至少加一個指標。');
+    else if(s.kpis.every(function(x){ return !x.lead; })) add('warn', 'MD', 'mLag', s.kpis[0].id, 'lead', L[s.id] + ' 只有落後指標', '等結果出來才知道，來不及調整。', '加一個過程中就看得到的領先指標，例如每週聯絡數。');
     s.kpis.forEach(function(m){
       var n = L[m.id];
-      if(!m.t.trim()) add('bad', 'M', 'mEmpty', m.id, 't', n + ' 沒有名稱', '看不出要量什麼。', '寫指標名稱，或刪掉。');
-      else plan.goals.forEach(function(g){ if(g.t.trim() && norm(g.t) === norm(m.t)) add('warn', 'M', 'mCopy', m.id, 't', n + ' 和 ' + L[g.id] + ' 一模一樣', '指標照抄目標，量不出這條策略本身有沒有效。', '改量這條策略直接影響的中間數字。'); });
-      if(m.target === '') add('bad', 'M', 'mTarget', m.id, 'target', n + ' 沒有目標值', '沒有數字就沒有紅綠燈。', '填目標值。');
-      if(!m.unit) add('warn', 'M', 'mUnit', m.id, 'unit', n + ' 沒有單位', '數字沒有單位會誤讀。', '填單位。');
-      if(!m.owner.trim()) add('warn', 'M', 'mOwner', m.id, 'owner', n + ' 沒有負責人', '大家負責等於沒人負責。', '填一個人的名字或職稱。');
-      if(m.base !== '' && m.target !== '' && ((m.dir === 'up' && m.target < m.base) || (m.dir === 'down' && m.target > m.base))) add('bad', 'M', 'mDir', m.id, 'dir', n + ' 方向相反', '目標值和「越高／越低越好」對不上。', '檢查起點、目標或方向。');
-      if(m.guess) add('warn', 'M', 'mGuess', m.id, 'target', n + ' 的數字是 AI 推測的', '還沒有人確認過。', '改成真實數字，或按「確認數字」。');
+      if(!m.t.trim()) add('bad', 'MD', 'mEmpty', m.id, 't', n + ' 沒有名稱', '看不出要量什麼。', '寫指標名稱，或刪掉。');
+      else plan.goals.forEach(function(g){ if(g.t.trim() && norm(g.t) === norm(m.t)) add('warn', 'MD', 'mCopy', m.id, 't', n + ' 和 ' + L[g.id] + ' 一模一樣', '指標照抄目標，量不出這條策略本身有沒有效。', '改量這條策略直接影響的中間數字。'); });
+      if(m.target === '') add('bad', 'MD', 'mTarget', m.id, 'target', n + ' 沒有目標值', '沒有數字就沒有紅綠燈。', '填目標值。');
+      if(!m.unit) add('warn', 'MD', 'mUnit', m.id, 'unit', n + ' 沒有單位', '數字沒有單位會誤讀。', '填單位。');
+      if(!m.owner.trim()) add('warn', 'MD', 'mOwner', m.id, 'owner', n + ' 沒有負責人', '大家負責等於沒人負責。', '填一個人的名字或職稱。');
+      if(m.base !== '' && m.target !== '' && ((m.dir === 'up' && m.target < m.base) || (m.dir === 'down' && m.target > m.base))) add('bad', 'MD', 'mDir', m.id, 'dir', n + ' 方向相反', '目標值和「越高／越低越好」對不上。', '檢查起點、目標或方向。');
+      if(m.guess) add('warn', 'MD', 'mGuess', m.id, 'target', n + ' 的數字是 AI 推測的', '還沒有人確認過。', '改成真實數字，或按「確認數字」。');
     });
-    if(!s.acts.length) add('warn', 'M', 'aNone', s.id, 'addAct', L[s.id] + ' 沒有行動', '策略沒有落到「誰在什麼時候做什麼」。', '加 1～5 個行動。');
+    if(!s.acts.length) add('warn', 'MP', 'aNone', s.id, 'addAct', L[s.id] + ' 沒有行動計畫', '策略沒有落到「誰在什麼時候做什麼」。', '加 1～5 個行動計畫。');
     s.acts.forEach(function(a){
       var n = L[a.id];
-      if(!a.t.trim()) add('warn', 'M', 'aEmpty', a.id, 't', n + ' 沒有內容', '空白的行動。', '寫內容，或刪掉。');
-      if(!a.owner.trim()) add('warn', 'M', 'aOwner', a.id, 'owner', n + ' 沒有負責人', '沒有人會主動去做。', '填一個人的名字或職稱。');
-      if(!a.to) add('warn', 'M', 'aDue', a.id, 'to', n + ' 沒有完成日', '沒有日期就沒辦法追。', '填完成日。');
-      if(a.from && a.to && a.from > a.to) add('bad', 'M', 'aRev', a.id, 'to', n + ' 完成日早於開始日', '日期顛倒。', '檢查日期。');
-      if(a.to && end && a.to > end) add('warn', 'M', 'aLate', a.id, 'to', n + ' 在規劃期間結束後才完成', '來不及影響這一期的目標。', '提前，或移到下一期。');
+      if(!a.t.trim()) add('warn', 'MP', 'aEmpty', a.id, 't', n + ' 沒有內容', '空白的行動。', '寫內容，或刪掉。');
+      if(!a.owner.trim()) add('warn', 'MP', 'aOwner', a.id, 'owner', n + ' 沒有負責人', '沒有人會主動去做。', '填一個人的名字或職稱。');
+      if(!a.to) add('warn', 'MP', 'aDue', a.id, 'to', n + ' 沒有完成日', '沒有日期就沒辦法追。', '填完成日。');
+      if(a.from && a.to && a.from > a.to) add('bad', 'MP', 'aRev', a.id, 'to', n + ' 完成日早於開始日', '日期顛倒。', '檢查日期。');
+      if(a.to && end && a.to > end) add('warn', 'MP', 'aLate', a.id, 'to', n + ' 在規劃期間結束後才完成', '來不及影響這一期的目標。', '提前，或移到下一期。');
     });
   });
   // 對齊：缺口
   plan.goals.forEach(function(g){
     if(!plan.strats.length) return;
     var c = coverage(plan, g), u = g.unit ? ' ' + g.unit : '';
-    if(c.st === 'none') add('bad', '對齊', 'cNone', g.id, 'cover', L[g.id] + ' 沒有任何策略支援', '寫了目標卻沒有做法，多半達不到。', '找一條策略勾選這個目標，或新增一條。');
+    if(c.st === 'none' && !kids(plan, g.id).length) add('bad', '對齊', 'cNone', g.id, 'cover', L[g.id] + ' 沒有任何策略支援', '寫了目標卻沒有做法，多半達不到。', '找一條策略勾選這個目標，或新增一條。');
     else if(c.st === 'short') add('bad', '對齊', 'cShort', g.id, 'cover', L[g.id] + ' 的策略加起來還差 ' + fmt(c.short) + u, '缺口 ' + fmt(c.gap) + u + '，各策略預估貢獻只有 ' + fmt(c.sum) + u + '（' + Math.round(c.ratio * 100) + '%）。', '加一條策略、加大現有策略，或調低目標。');
     else if(c.st === 'near') add('warn', '對齊', 'cNear', g.id, 'cover', L[g.id] + ' 的策略加起來略少 ' + fmt(c.short) + u, '缺口 ' + fmt(c.gap) + u + '，預估貢獻 ' + fmt(c.sum) + u + '（' + Math.round(c.ratio * 100) + '%），沒有緩衝。', '多留一點餘裕，通常抓 110～120%。');
     else if(c.st === 'unest') add('warn', '對齊', 'cUnest', g.id, 'cover', L[g.id] + ' 有 ' + c.unest + ' 條策略沒估貢獻', '不知道全部做完夠不夠。', '在策略裡填預估貢獻，粗估也可以。');
@@ -206,9 +248,9 @@ function check(plan, plans){
   var own = {};
   kpisOf(plan).forEach(function(m){ var n = m.owner.trim(); if(n) own['#' + n] = (own['#' + n] || 0) + 1; });
   actsOf(plan).forEach(function(x){ var n = x.a.owner.trim(); if(n && x.a.st !== 'done') own['#' + n] = (own['#' + n] || 0) + 1; });
-  Object.keys(own).forEach(function(k){ if(own[k] > 8) add('warn', 'M', 'ownerLoad', '', 'owner', k.slice(1) + ' 一個人負責 ' + own[k] + ' 項', '指標加未完成的行動超過 8 項，容易卡住。', '分一些給別人，或先做重要的。'); });
+  Object.keys(own).forEach(function(k){ if(own[k] > 8) add('warn', 'MP', 'ownerLoad', '', 'owner', k.slice(1) + ' 一個人負責 ' + own[k] + ' 項', '指標加未完成的行動超過 8 項，容易卡住。', '分一些給別人，或先做重要的。'); });
   var cost = costOf(plan);
-  if(plan.budget !== '' && cost > plan.budget) add('bad', 'M', 'budget', '', 'budget', '行動預算超過上限 ' + fmt(cost - plan.budget) + ' 元', '行動加總 ' + fmt(cost) + ' 元，上限 ' + fmt(plan.budget) + ' 元。', '砍掉或縮小貢獻最低的行動。');
+  if(plan.budget !== '' && cost > plan.budget) add('bad', 'MP', 'budget', '', 'budget', '行動預算超過上限 ' + fmt(cost - plan.budget) + ' 元', '行動加總 ' + fmt(cost) + ' 元，上限 ' + fmt(plan.budget) + ' 元。', '砍掉或縮小貢獻最低的行動。');
   // 上下層
   if(plans) cascadeIssues(plan, plans).forEach(function(x){ add('warn', '展開', x.code, x.id, x.field, x.t, x.why, x.fix); });
   return R.filter(function(i){ return i.lv === 'bad'; }).concat(R.filter(function(i){ return i.lv !== 'bad'; }));
@@ -269,7 +311,7 @@ function syncFromParent(plan, plans){
     var g = plan.goals.filter(function(x){ return x.src && x.src.k === k.id; })[0];
     if(g){ if(g.src.snap !== snap(k)){ Object.assign(g, {t:k.t, base:k.base, target:k.target, unit:k.unit, dir:k.dir, acc:k.acc, guess:k.guess}); g.src.snap = snap(k); n++; } return; }
     var sib = childrenOf(plans, par.id, s.id).some(function(c){ return c.id !== plan.id && c.goals.some(function(x){ return x.src && x.src.k === k.id; }); });
-    if(!sib && plan.goals.length < LIM.goals){ plan.goals.push(fromKpi(k, plan.to)); n++; }
+    if(!sib && kids(plan, '').length < LIM.goals){ plan.goals.push(fromKpi(k, plan.to)); n++; }
   });
   return n;
 }
@@ -291,7 +333,14 @@ function frac(plan, due, ym){
   var a = dayNo(plan.from), b = dayNo(e), d = dayNo(monthEnd(ym));
   return Math.min(1, Math.max(0, (d - a + 1) / (b - a + 1)));
 }
-function valueAt(plan, id, ym){ var l = has(plan.logs, ym) ? plan.logs[ym] : null; return l && has(l.v, id) ? l.v[id] : null; }
+function ownAt(plan, id, ym){ var l = has(plan.logs, ym) ? plan.logs[ym] : null; return l && has(l.v, id) ? l.v[id] : null; }
+// 自己有填用自己的；沒填而次目標「加起來等於它」且都有數字，就自動加總
+function valueAt(plan, id, ym){
+  var v = ownAt(plan, id, ym); if(v != null || id.charAt(0) !== 'g') return v;
+  var g = goalById(plan, id), ss = g && subSum(plan, g); if(!ss || ss.st === 'mix') return null;
+  var t = 0, cs = kids(plan, id); for(var i = 0; i < cs.length; i++){ var c = valueAt(plan, cs[i].id, ym); if(c == null) return null; t += c; }
+  return Math.round(t * 1e9) / 1e9;
+}
 function expAt(plan, it, ym){ var e = frac(plan, it.due, ym); if(e == null || it.target === '') return null; if(it.acc === 'sum') return it.target * e; return it.base === '' ? null : it.base + (it.target - it.base) * e; }
 function progress(plan, it, ym){
   var r = {actual:null, f:null, e:null, exp:null, st:'na', ym:'', missing:0}, m0 = plan.from ? plan.from.slice(0, 7) : '';
@@ -335,7 +384,7 @@ function linkText(plan, s, L, withNum){ return plan.goals.filter(function(g){ re
 function measureText(x){ return (x.t || '（未命名）') + '：' + (x.base === '' ? '' : fmt(x.base) + ' → ') + fmt(x.target) + (x.unit ? ' ' + x.unit : '') + (x.dir === 'down' ? '（越低越好）' : ''); }
 function toText(plan){
   var L = labels(plan), r = ['【' + plan.name + '】' + (plan.unit ? plan.unit : '') + (plan.from ? '　' + plan.from + '～' + plan.to : ''), '', 'O 最終目的', plan.o || '（未填）', '', 'G 具體目標'];
-  plan.goals.forEach(function(g){ r.push(L[g.id] + ' ' + measureText(g) + (g.due ? '，' + g.due + ' 前' : '') + (g.guess ? '（AI 推測，未確認）' : '')); });
+  plan.goals.forEach(function(g){ r.push('　'.repeat(depthOf(plan, g)) + L[g.id] + ' ' + measureText(g) + (kids(plan, g.id).length ? '（' + ROLL[g.roll] + '）' : '') + (g.due ? '，' + g.due + ' 前' : '') + (g.guess ? '（AI 推測，未確認）' : '')); });
   plan.strats.forEach(function(s){
     var lk = linkText(plan, s, L);
     r.push('', L[s.id] + ' ' + (s.t || '（未填）') + (lk ? '　→ 支援 ' + lk : ''));
@@ -349,11 +398,11 @@ function csvCell(v){ if(typeof v === 'number') return String(v); v = String(v ==
 function toCsv(plan){
   var L = labels(plan), rows = [['層級', '編號', '內容', '起點', '目標', '單位', '方向', '期限／頻率', '負責人', '支援', '備註', '預算', '狀態']];
   rows.push(['O', 'O', plan.o, '', '', '', '', plan.to, '', '', plan.unit, plan.budget, '']);
-  plan.goals.forEach(function(g){ rows.push(['G', L[g.id], g.t, g.base, g.target, g.unit, g.dir === 'down' ? '越低越好' : '越高越好', g.due, '', 'O', g.guess ? 'AI 推測未確認' : '', '', '']); });
+  plan.goals.forEach(function(g){ rows.push([g.up ? 'g 次目標' : 'G', L[g.id], g.t, g.base, g.target, g.unit, g.dir === 'down' ? '越低越好' : '越高越好', g.due, '', g.up ? L[g.up] : 'O', g.guess ? 'AI 推測未確認' : '', '', '']); });
   plan.strats.forEach(function(s){
     rows.push(['S', L[s.id], s.t, '', '', '', '', '', '', linkText(plan, s, L, true), (s.how ? '做法：' + s.how : '') + (s.not ? '　不做：' + s.not : ''), '', '']);
-    s.kpis.forEach(function(k){ rows.push(['M 指標', L[k.id], k.t, k.base, k.target, k.unit, k.dir === 'down' ? '越低越好' : '越高越好', FREQ[k.freq], k.owner, L[s.id], (k.lead ? '領先指標' : '落後指標') + (k.guess ? '・AI 推測未確認' : ''), '', '']); });
-    s.acts.forEach(function(a){ rows.push(['M 行動', L[a.id], a.t, '', '', '', '', a.to, a.owner, L[s.id], a.from ? a.from + ' 開始' : '', a.cost, ST[a.st]]); });
+    s.kpis.forEach(function(k){ rows.push(['M 衡量指標 Dashboard', L[k.id], k.t, k.base, k.target, k.unit, k.dir === 'down' ? '越低越好' : '越高越好', FREQ[k.freq], k.owner, L[s.id], (k.lead ? '領先指標' : '落後指標') + (k.guess ? '・AI 推測未確認' : ''), '', '']); });
+    s.acts.forEach(function(a){ rows.push(['M 行動計畫 Action Plans', L[a.id], a.t, '', '', '', '', a.to, a.owner, L[s.id], a.from ? a.from + ' 開始' : '', a.cost, ST[a.st]]); });
   });
   return '\ufeff' + rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n');
 }
@@ -361,8 +410,8 @@ function toDoc(plan){
   var L = labels(plan), td = '<td style="border:1px solid #555;padding:5pt;vertical-align:top">';
   var h = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>' + esc(plan.name) + '</title><style>@page S{size:29.7cm 21cm;mso-page-orientation:landscape;margin:1.5cm}div.S{page:S}body{font-family:"Microsoft JhengHei",sans-serif;font-size:10.5pt}table{border-collapse:collapse;width:100%}h1{font-size:18pt}th{border:1px solid #555;padding:5pt;background:#16324F;color:#fff;text-align:left}</style></head><body><div class="S">';
   h += '<h1>' + esc(plan.name) + '</h1><p>' + esc(plan.unit) + '　' + esc(plan.from) + '～' + esc(plan.to) + '</p><table><tr><th>O 最終目的</th></tr><tr>' + td + esc(plan.o) + '</td></tr></table><br><table><tr><th>G 具體目標</th><th>起點</th><th>目標</th><th>單位</th><th>期限</th></tr>';
-  plan.goals.forEach(function(g){ h += '<tr>' + td + L[g.id] + ' ' + esc(g.t) + (g.guess ? '（AI 推測，未確認）' : '') + '</td>' + td + fmt(g.base) + '</td>' + td + fmt(g.target) + '</td>' + td + esc(g.unit) + '</td>' + td + esc(g.due) + '</td></tr>'; });
-  h += '</table><br><table><tr><th>S 策略</th><th>M 衡量指標</th><th>M 行動</th></tr>';
+  plan.goals.forEach(function(g){ h += '<tr>' + td + '　'.repeat(depthOf(plan, g)) + L[g.id] + ' ' + esc(g.t) + (g.guess ? '（AI 推測，未確認）' : '') + '</td>' + td + fmt(g.base) + '</td>' + td + fmt(g.target) + '</td>' + td + esc(g.unit) + '</td>' + td + esc(g.due) + '</td></tr>'; });
+  h += '</table><br><table><tr><th>S 策略</th><th>M 衡量指標 Dashboard</th><th>M 行動計畫 Action Plans</th></tr>';
   plan.strats.forEach(function(s){
     h += '<tr>' + td + '<b>' + L[s.id] + ' ' + esc(s.t) + '</b>' + (s.how ? '<br>做法：' + esc(s.how) : '') + (s.not ? '<br>不做：' + esc(s.not) : '') + '<br>支援：' + (linkText(plan, s, L) || '—') + '</td>' + td +
       s.kpis.map(function(k){ return L[k.id] + ' ' + esc(measureText(k)) + '<br>' + FREQ[k.freq] + '・' + esc(k.owner || '未指定') + (k.guess ? '・AI 推測，未確認' : ''); }).join('<br>') + '</td>' + td +
@@ -374,8 +423,8 @@ function toDoc(plan){
 function sharePlan(plan){ var p = sanitizePlan(JSON.parse(JSON.stringify(plan))); p.logs = {}; p.parent = null; p.goals.forEach(function(g){ g.src = null; }); return p; }
 
 /* ---------- AI 提示詞與回覆整理 ---------- */
-var RULES = '規則：\n- 繁體中文（台灣用語），句子短、具體。\n- O 是一句質化的方向，不放數字、不喊口號。\n- G 是 2～4 個可量化的結果，不是行動。\n- S 是 3～4 條做法，要有取捨，寫出「不做什麼」。\n- M 的指標量這條策略直接影響的數字，每條策略至少一個領先指標；行動寫得出誰做、什麼時候完成。\n- 不要編造公司名、人名、得獎或客戶名單。負責人只寫職稱。\n';
-var DRAFT_SHAPE = '{"o":"","goals":[{"t":"指標名稱","base":0,"target":0,"unit":"","dir":"up 或 down"}],"strats":[{"t":"","how":"","not":"","links":["G1"],"kpis":[{"t":"","base":0,"target":0,"unit":"","dir":"up","lead":true,"owner":"職稱"}],"acts":[{"t":"","owner":"職稱","to":"YYYY-MM-DD"}]}]}';
+var RULES = '規則：\n- 繁體中文（台灣用語），句子短、具體。\n- O 是一句質化的方向，不放數字、不喊口號。\n- G 是 2～4 個可量化的結果，不是行動；需要時可以往下拆 2～4 個次目標 g，roll 寫 sum（次目標加起來等於它，單位要相同）或 drive（次目標各自帶動它）。\n- S 是 3～4 條做法，要有取捨，寫出「不做什麼」。\n- M 分兩部分：kpis 是衡量指標（Dashboard），量這條策略直接影響的數字，每條策略至少一個領先指標；acts 是行動計畫（Action Plans），寫得出誰做、什麼時候完成。\n- 不要編造公司名、人名、得獎或客戶名單。負責人只寫職稱。\n';
+var DRAFT_SHAPE = '{"o":"","goals":[{"t":"指標名稱","base":0,"target":0,"unit":"","dir":"up 或 down","roll":"sum 或 drive","subs":[{"t":"","base":0,"target":0,"unit":"","dir":"up"}]}],"strats":[{"t":"","how":"","not":"","links":["G1","g1.1"],"kpis":[{"t":"","base":0,"target":0,"unit":"","dir":"up","lead":true,"owner":"職稱"}],"acts":[{"t":"","owner":"職稱","to":"YYYY-MM-DD"}]}]}';
 function draftPrompt(bg, from, to){ return '請依下面的背景，幫我擬一份 OGSM 草稿。\n\n背景：' + (bg || '（未填）') + '\n期間：' + (from || '?') + '～' + (to || '?') + '\n\n' + RULES + '- 背景沒給的數字可以推測，使用者會再確認；真的猜不出來就留空字串。\n\n只回傳 JSON，格式：\n' + DRAFT_SHAPE; }
 var KIND = {o:'O（最終目的）', g:'G（量化目標的名稱）', s:'S（策略）', k:'M（衡量指標的名稱）', a:'M（行動）'};
 function rewritePrompt(kind, text, plan){ return '下面是我 OGSM 的其中一格，請改寫成 3 個更清楚的版本。\n\n要改的是 ' + (KIND[kind] || KIND.o) + '：「' + text + '」\n\n整份 OGSM：\n' + toText(plan) + '\n\n' + RULES + '- 不可以改動或新增任何數字。\n\n只回傳 JSON：{"options":["","",""]}'; }
@@ -394,11 +443,15 @@ function cleanAi(j, o){
   var p = newPlan({name:str(o.name, 60) || 'AI 草稿', from:dateOr(o.from), to:dateOr(o.to), o:plain(j.o, 120)});
   function ms(x){ var b = aiNum(x.base), t = aiNum(x.target); return {t:plain(x.t, 60), base:b, target:t, unit:plain(x.unit, 20), dir:x.dir === 'down' ? 'down' : 'up', guess:b !== '' || t !== ''}; }
   // 連結用 AI 原本的編號，過濾掉沒名稱的目標後仍要對得上
-  var raw = arr(j.goals, 5).map(function(g){ var r = newGoal(Object.assign(ms(g), {due:p.to})); return r.t ? r : null; });
-  p.goals = raw.filter(Boolean);
+  var byNo = {};
+  arr(j.goals, 5).forEach(function(x, i){
+    var g = newGoal(Object.assign(ms(x), {due:p.to, roll:x.roll === 'sum' ? 'sum' : 'drive'})); if(!g.t) return;
+    byNo[String(i + 1)] = g; p.goals.push(g);
+    arr(x.subs, 5).forEach(function(y, k){ var c = newGoal(Object.assign(ms(y), {due:p.to, up:g.id})); if(!c.t) return; byNo[(i + 1) + '.' + (k + 1)] = c; p.goals.push(c); });
+  });
   p.strats = arr(j.strats, 5).map(function(s){
     var r = newStrat({t:plain(s.t, 80), how:plain(s.how, 200), not:plain(s.not, 120)});
-    (Array.isArray(s.links) ? s.links : []).forEach(function(l){ var m = /^G?\s*(\d+)$/i.exec(String(l).trim()), g = m && raw[m[1] - 1]; if(g) r.links[g.id] = ''; });
+    (Array.isArray(s.links) ? s.links : []).forEach(function(l){ var m = /^G?\s*(\d+(?:\.\d+)?)$/i.exec(String(l).trim()); if(m && has(byNo, m[1])) r.links[byNo[m[1]].id] = ''; });
     r.kpis = arr(s.kpis, 4).map(function(k){ return newKpi(Object.assign(ms(k), {lead:k.lead !== false, owner:plain(k.owner, 20)})); }).filter(function(k){ return k.t; });
     r.acts = arr(s.acts, 6).map(function(a){ return newAct({t:plain(a.t, 80), owner:plain(a.owner, 20), to:dateOr(a.to)}); }).filter(function(a){ return a.t; });
     return r;
@@ -409,9 +462,13 @@ function cleanOptions(j){ var seen = {}; return (j && Array.isArray(j.options) ?
 
 /* ---------- 虛構範例 ---------- */
 function ex(id, name, d){
-  var gi = d.g.map(function(x, i){ return newGoal({id:'g' + id + (i + 1), t:x[0], base:x[1], target:x[2], unit:x[3], due:x[4] || d.to, dir:x[5] || 'up', acc:x[6] || 'level'}); });
+  var gi = [], no = {};
+  (function walk(list, pid, pno, up){ list.forEach(function(x, i){
+    var n = pno ? pno + '.' + (i + 1) : String(i + 1), g = newGoal({id:pid + (pno ? 'x' : '') + (i + 1), t:x[0], base:x[1], target:x[2], unit:x[3], due:x[4] || d.to, dir:x[5] || 'up', acc:x[6] || 'level', up:up, roll:x[7] || 'drive'});
+    gi.push(g); no[n] = g; if(x[8]) walk(x[8], g.id, n, g.id);
+  }); })(d.g, 'g' + id, '', '');
   var st = d.s.map(function(s, i){
-    var links = {}; Object.keys(s.l).forEach(function(n){ links[gi[n - 1].id] = s.l[n]; });
+    var links = {}; Object.keys(s.l).forEach(function(n){ links[no[n].id] = s.l[n]; });
     return newStrat({id:'s' + id + (i + 1), t:s.t, how:s.how || '', not:s.not || '', links:links,
       kpis:(s.k || []).map(function(k, j){ return newKpi({id:'k' + id + (i + 1) + 'x' + (j + 1), t:k[0], base:k[1], target:k[2], unit:k[3], freq:k[4] || 'month', owner:k[5] || '', lead:k[6] !== 0, dir:k[7] || 'up', acc:k[8] || 'level'}); }),
       acts:(s.a || []).map(function(a, j){ return newAct({id:'a' + id + (i + 1) + 'x' + (j + 1), t:a[0], owner:a[1] || '', from:a[2] || '', to:a[3] || '', cost:a[4] === undefined ? '' : a[4], st:a[5] || 'todo'}); })});
@@ -464,10 +521,10 @@ var EXAMPLES = [
     s:[{t:'只做三個主題，做到最深', how:'行銷、人資、會計各一套可直接用的練習包', not:'不接和三個主題無關的課', l:{1:30, 2:.25}, k:[['練習包完成數', 0, 3, '套', 'month', '自己']], a:[['完成行銷練習包', '自己', '2027-01-05', '2027-02-28', 10000], ['完成人資與會計練習包', '自己', '2027-03-01', '2027-06-30', 20000]]},
        {t:'課後兩週回訪一次', how:'固定時段線上答問，收集應用案例', not:'不另外做付費社群', l:{2:.1, 3:15}, k:[['回訪出席率', 0, 40, '%', 'month', '自己']], a:[['寫回訪流程', '自己', '2027-02-01', '2027-03-10', 0]]},
        {t:'每週公開一個真實案例', how:'一則短文加一張圖，附可複製的步驟', not:'不追熱門話題', l:{1:45, 3:13}, k:[['每月公開案例', 1, 4, '則', 'month', '自己'], ['私訊詢課數', 2, 8, '則', 'month', '自己']], a:[['排好一季案例題目', '自己', '2027-01-04', '2027-01-20', 0]]}]})]; }},
-  {id:'rst', cat:'shop', n:'🍜 小餐館', make:function(){ return [ex('rst', '巷口小館 2027 OGSM', {unit:'巷口小館（虛構）', from:'2027-01-01', to:'2027-12-31', budget:400000, o:'成為附近家庭平日晚餐最放心的廚房',
-    g:[['平日晚餐營收', 320, 440, '萬元', '', 'up', 'sum'], ['食材報廢率', 8, 4, '%', '', 'down'], ['一個月內再訪率', 28, 38, '%']],
-    s:[{t:'平日只賣五道當週菜', how:'每週一公布菜單，食材集中採購，出餐縮到八分鐘', not:'平日不提供四十道全菜單', l:{1:60, 2:3}, k:[['平日出餐時間', 18, 8, '分鐘', 'week', '主廚', 1, 'down'], ['當週菜點餐占比', 0, 70, '%', 'week', '外場組長']], a:[['排出十二週菜單輪替表', '主廚', '2027-01-05', '2027-02-12', 20000], ['試賣並調整份量', '主廚', '2027-02-15', '2027-04-30', 50000]]},
-       {t:'做家庭份量的預訂餐盒', how:'下午三點前用表單預訂，五點半起門口取餐', not:'不上外送平台打折', l:{1:70, 3:4}, k:[['每週預訂份數', 0, 160, '份', 'week', '店長']], a:[['設計餐盒與預訂表單', '店長', '2027-02-01', '2027-03-15', 60000], ['附近三個社區試吃', '店長', '2027-03-20', '2027-06-30', 45000]]},
+  {id:'rst', cat:'shop', n:'🍜 小餐館（含次目標）', make:function(){ return [ex('rst', '巷口小館 2027 OGSM', {unit:'巷口小館（虛構）', from:'2027-01-01', to:'2027-12-31', budget:400000, o:'成為附近家庭平日晚餐最放心的廚房',
+    g:[['平日晚餐營收', 320, 440, '萬元', '', 'up', 'sum', 'drive', [['平日每晚來客數', 62, 80, '人'], ['平均客單價', 230, 255, '元']]], ['食材報廢率', 8, 4, '%', '', 'down'], ['一個月內再訪率', 28, 38, '%']],
+    s:[{t:'平日只賣五道當週菜', how:'每週一公布菜單，食材集中採購，出餐縮到八分鐘', not:'平日不提供四十道全菜單', l:{1:60, '1.1':8, '1.2':10, 2:3}, k:[['平日出餐時間', 18, 8, '分鐘', 'week', '主廚', 1, 'down'], ['當週菜點餐占比', 0, 70, '%', 'week', '外場組長']], a:[['排出十二週菜單輪替表', '主廚', '2027-01-05', '2027-02-12', 20000], ['試賣並調整份量', '主廚', '2027-02-15', '2027-04-30', 50000]]},
+       {t:'做家庭份量的預訂餐盒', how:'下午三點前用表單預訂，五點半起門口取餐', not:'不上外送平台打折', l:{1:70, '1.1':12, '1.2':18, 3:4}, k:[['每週預訂份數', 0, 160, '份', 'week', '店長']], a:[['設計餐盒與預訂表單', '店長', '2027-02-01', '2027-03-15', 60000], ['附近三個社區試吃', '店長', '2027-03-20', '2027-06-30', 45000]]},
        {t:'剩料當天變成員工餐與小菜', how:'打烊前盤點，隔天備料扣掉剩量', not:'不為了好看多備料', l:{2:1.3, 3:7}, k:[['每日盤點完成率', 30, 95, '%', 'week', '二廚']], a:[['寫盤點表與備料公式', '二廚', '2027-01-10', '2027-02-10', 0]]}]})]; }},
   {id:'hom', cat:'shop', n:'🏡 民宿', make:function(){ return [ex('hom', '山腳民宿 2027 OGSM', {unit:'山腳民宿（虛構）', from:'2027-01-01', to:'2027-12-31', budget:500000, o:'讓帶小孩的家庭願意每年回來住一次',
     g:[['平日住房率', 34, 52, '%'], ['官網直接訂房占比', 18, 40, '%'], ['回頭客訂房數', 60, 130, '組', '', 'up', 'sum']],
@@ -494,12 +551,12 @@ var EXAMPLES = [
     s:[{t:'先服務連鎖早餐與飲料店', how:'內建兩種業態的班別範本，匯入名單即可排', not:'不做餐飲以外的產業', l:{1:170, 3:22}, k:[['試用店家數', 30, 120, '家', 'month', '業務'], ['試用轉付費率', 12, 28, '%', 'month', '業務']], a:[['整理兩種業態範本', '產品經理', '2027-01-04', '2027-03-15', 300000], ['拜訪二十家店做測試', '業務', '2027-02-01', '2027-04-30', 120000]]},
        {t:'把第一次排班壓到十分鐘內', how:'開通時陪老闆排完一週，卡住的地方每週修', not:'上半年不加新模組', l:{2:2, 3:15}, k:[['陪跑完成率', 20, 90, '%', 'week', '客戶成功'], ['每週修掉的卡點', 1, 4, '個', 'week', '產品經理']], a:[['設計陪跑流程', '客戶成功', '2027-01-10', '2027-02-28', 80000]]},
        {t:'讓店家介紹店家', how:'介紹成功兩邊各延一個月，店長社團每月一題', not:'不投大量廣告', l:{1:130, 2:1.8}, k:[['每月介紹數', 2, 25, '家', 'month', '行銷']], a:[['建好介紹碼與社團', '行銷', '2027-02-15', '2027-04-15', 150000]]}]})]; }},
-  {id:'slp', cat:'dept', n:'🤝 B2B 業務部（含下一層區域組）', make:function(){
+  {id:'slp', cat:'dept', n:'🤝 B2B 業務部（含目標樹與下一層）', make:function(){
     var p = ex('slp', '業務部 2027 OGSM', {unit:'晟達設備業務部（虛構）', from:'2027-01-01', to:'2027-12-31', budget:1500000, o:'成為中型工廠換設備時第一個打電話的人',
-      g:[['年度接單金額', 8000, 10500, '萬元', '', 'up', 'sum'], ['老客戶加購率', 22, 35, '%'], ['平均成交天數', 96, 70, '天', '', 'down']],
-      s:[{t:'專攻三個產業的汰換需求', how:'鎖定食品、塑膠、金屬加工，建立設備年限名單', not:'不追公開標案的低價案', l:{1:1500, 3:12}, k:[['汰換名單完成家數', 40, 300, '家', 'month', '業務經理'], ['每月有效拜訪', 35, 90, '次', 'month', '業務經理']], a:[['整理設備年限名單', '業務助理', '2027-01-04', '2027-03-31', 100000], ['三份產業案例資料', '業務經理', '2027-02-01', '2027-04-30', 150000]]},
-         {t:'交機後第九十天回訪', how:'工程師和業務一起去，帶使用數據與改善建議', not:'不把回訪外包給客服', l:{1:900, 2:15}, k:[['第九十天回訪完成率', 25, 95, '%', 'month', '售服主管']], a:[['寫回訪檢查表', '售服主管', '2027-01-15', '2027-02-26', 0]]},
-         {t:'報價三天內到客戶手上', how:'標準品用模組化報價，特殊品當天回覆時程', not:'不做沒有需求確認的客製報價', l:{1:350, 3:16}, k:[['三天內報價比例', 30, 85, '%', 'week', '業務助理']], a:[['整理報價模組', '業務助理', '2027-02-01', '2027-05-31', 200000]]}]});
+      g:[['年度接單金額', 8000, 10500, '萬元', '', 'up', 'sum', 'sum', [['食品業接單', 3500, 4800, '萬元', '', 'up', 'sum'], ['塑膠業接單', 2500, 3200, '萬元', '', 'up', 'sum'], ['金屬加工業接單', 2000, 2500, '萬元', '', 'up', 'sum']]], ['老客戶加購率', 22, 35, '%'], ['平均成交天數', 96, 70, '天', '', 'down']],
+      s:[{t:'專攻三個產業的汰換需求', how:'鎖定食品、塑膠、金屬加工，建立設備年限名單', not:'不追公開標案的低價案', l:{'1.1':750, '1.2':400, '1.3':350, 3:12}, k:[['汰換名單完成家數', 40, 300, '家', 'month', '業務經理'], ['每月有效拜訪', 35, 90, '次', 'month', '業務經理']], a:[['整理設備年限名單', '業務助理', '2027-01-04', '2027-03-31', 100000], ['三份產業案例資料', '業務經理', '2027-02-01', '2027-04-30', 150000]]},
+         {t:'交機後第九十天回訪', how:'工程師和業務一起去，帶使用數據與改善建議', not:'不把回訪外包給客服', l:{'1.1':450, '1.2':250, '1.3':200, 2:15}, k:[['第九十天回訪完成率', 25, 95, '%', 'month', '售服主管']], a:[['寫回訪檢查表', '售服主管', '2027-01-15', '2027-02-26', 0]]},
+         {t:'報價三天內到客戶手上', how:'標準品用模組化報價，特殊品當天回覆時程', not:'不做沒有需求確認的客製報價', l:{'1.1':150, '1.2':100, '1.3':100, 3:16}, k:[['三天內報價比例', 30, 85, '%', 'week', '業務助理']], a:[['整理報價模組', '業務助理', '2027-02-01', '2027-05-31', 200000]]}]});
     var c = cascade(p, 'sslp1', '南區業務組'); c.id = 'pslpb'; c.name = '南區業務組・三產業汰換'; c.o = '讓南區的工廠在設備故障之前就想到我們';
     c.goals.forEach(function(g, i){ g.id = 'gslpb' + (i + 1); });
     c.strats = [newStrat({id:'sslpb1', t:'跟著保養廠一起找名單', how:'和三家保養廠交換設備年限資訊，成交給服務單', not:'不買名單', links:{gslpb1:180, gslpb2:25}, kpis:[newKpi({id:'kslpb1x1', t:'保養廠提供的家數', base:0, target:150, unit:'家', freq:'month', owner:'南區組長'})], acts:[newAct({id:'aslpb1x1', t:'談三家保養廠合作', owner:'南區組長', from:'2027-01-10', to:'2027-03-31', cost:30000})]}),
@@ -538,9 +595,9 @@ var EXAMPLES = [
 function example(id){ for(var i = 0; i < EXAMPLES.length; i++) if(EXAMPLES[i].id === id) return EXAMPLES[i].make(); return null; }
 
 var API = {LIM:LIM, FREQ:FREQ, ST:ST, STATUS:STATUS, KIND:KIND, EXAMPLES:EXAMPLES, EX_CATS:EX_CATS, example:example, has:has, fmt:fmt, esc:esc, norm:norm, isDate:isDate, isYm:isYm, monthEnd:monthEnd, nextYm:nextYm, numOr:numOr, str:str,
-  newGoal:newGoal, newKpi:newKpi, newAct:newAct, newStrat:newStrat, newPlan:newPlan, blankPlan:blankPlan, sanitizePlan:sanitizePlan, sanitize:sanitize, clone:clone, removeGoal:removeGoal, planById:planById, kpisOf:kpisOf, actsOf:actsOf, labels:labels, linkText:linkText,
+  newGoal:newGoal, newKpi:newKpi, newAct:newAct, newStrat:newStrat, newPlan:newPlan, blankPlan:blankPlan, sanitizePlan:sanitizePlan, sanitize:sanitize, clone:clone, removeGoal:removeGoal, ROLL:ROLL, goalById:goalById, kids:kids, depthOf:depthOf, underOf:underOf, upOptions:upOptions, setUp:setUp, moveGoal:moveGoal, orderGoals:orderGoals, subSum:subSum, planById:planById, kpisOf:kpisOf, actsOf:actsOf, labels:labels, linkText:linkText,
   coverage:coverage, hasTargetNumber:hasTargetNumber, check:check, score:score, costOf:costOf, snap:snap, cascade:cascade, childrenOf:childrenOf, cascadeIssues:cascadeIssues, syncFromParent:syncFromParent, tree:tree,
-  months:months, frac:frac, valueAt:valueAt, progress:progress, expAt:expAt, series:series, summary:summary, overdue:overdue, actStats:actStats,
+  months:months, frac:frac, valueAt:valueAt, ownAt:ownAt, progress:progress, expAt:expAt, series:series, summary:summary, overdue:overdue, actStats:actStats,
   measureText:measureText, toText:toText, csvCell:csvCell, toCsv:toCsv, toDoc:toDoc, sharePlan:sharePlan,
   draftPrompt:draftPrompt, rewritePrompt:rewritePrompt, advicePrompt:advicePrompt, reviewPrompt:reviewPrompt, cleanAi:cleanAi, cleanOptions:cleanOptions};
 if(typeof module !== 'undefined' && module.exports) module.exports = API; else root.OSP = API;

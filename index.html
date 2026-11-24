@@ -66,6 +66,7 @@ p{margin:.3rem 0}
 
 /* 海圖紙卡片：外框是海圖的刻度邊 */
 .card{background:var(--sheet);border:1.5px solid var(--sea);border-radius:.25rem;padding:.9rem 1rem;margin-top:.9rem;position:relative}
+.card>h3 .big{min-width:1.6rem;height:1.6rem;font-size:.98rem;vertical-align:.1rem}
 .card>h3{font-family:var(--serif);font-size:1.2rem;color:var(--sea);margin-bottom:.3rem}
 .card h4{font-size:.95rem;color:var(--sea);margin:.8rem 0 .3rem}
 .lv::before,.mapcard::before,.scorecard::before{content:'';position:absolute;left:0;right:0;top:0;height:6px;background:repeating-linear-gradient(90deg,var(--sea) 0 28px,var(--sheet) 28px 56px);border-bottom:1.5px solid var(--sea)}
@@ -87,6 +88,30 @@ p{margin:.3rem 0}
 .fld input[type=number],.vin{font-family:var(--mono);text-align:right}
 .lv-o .fld textarea{font-family:var(--serif);font-weight:700;font-size:1.2rem}
 .item{border-top:1px solid var(--line);padding:.6rem 0 .5rem}
+.item.gd1,.item.gd2{margin-left:1.6rem;padding-left:.9rem;border-top:0;border-left:3px solid var(--brass);position:relative}
+.item.gd2{margin-left:3.6rem}
+.item.gd1::before,.item.gd2::before{content:'';position:absolute;left:0;top:1.75rem;width:.8rem;border-top:3px solid var(--brass)}
+.no.g{background:#5B7690}
+.gl1{padding-left:1.4rem!important}.gl2{padding-left:2.8rem!important}
+.mbox{border:1px solid var(--line);border-radius:.25rem;margin-top:.7rem;padding:.1rem .7rem .6rem}
+.mbox.md{background:#F8F1DF}.mbox.mp{background:#EDF2F1}
+.mbox h4{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin:.5rem 0 .2rem}
+.mbox h4 small{font-weight:500;color:var(--sub);font-size:.8rem}
+.mbox h4 .big{min-width:1.5rem;height:1.5rem;font-size:.92rem}
+.mbox .item:first-of-type{border-top:0}
+.gantt{position:relative;display:inline-block;width:100%;min-width:9rem;height:10px;border-radius:5px;background:var(--hair);vertical-align:middle}
+.gantt i{position:absolute;top:0;bottom:0;border-radius:4px;background:#8b8f90}
+.gantt i.done{background:var(--ok)}.gantt i.doing{background:var(--sea)}.gantt i.todo{background:#9AA7B1}.gantt i.bad{background:var(--bad)}
+.gantt u{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink)}
+.gtree{display:block;width:100%;max-width:58rem;height:auto}
+.gtree .tl{fill:none;stroke:var(--brass);stroke-width:2.2}.gtree .tl.dash{stroke-dasharray:6 4}
+.gtree .tn rect{fill:var(--field);stroke:var(--brass);stroke-width:2}.gtree .tn.d0 rect{stroke:var(--sea);stroke-width:2.6}
+.gtree .tn[role]{cursor:pointer}.gtree .tn:focus-visible{outline:none}.gtree .tn:focus-visible rect{stroke:var(--route);stroke-width:4}
+.gtree .t1{font:700 15px 'Noto Sans TC','Microsoft JhengHei',sans-serif;fill:var(--ink)}.gtree .t2{font:500 13px 'Noto Sans TC','Microsoft JhengHei',sans-serif;fill:var(--sub)}
+.gtree .tro{fill:var(--sea)}.gtree .to{font:700 12.5px 'Noto Sans TC','Microsoft JhengHei',sans-serif;fill:#E5C98C}.gtree .to2{font:700 14.5px 'Noto Sans TC','Microsoft JhengHei',sans-serif;fill:#fff}
+.gsub{border-left:2px solid var(--brass);margin:.35rem 0 0 .2rem;padding-left:.6rem}
+.gsub .gc{border-left:0;padding:.15rem 0 0}.gsub .gc strong{font-size:1.02rem}
+.map .ed.tr{stroke:var(--brass);stroke-width:3}
 .item.sub{border-top:1px dashed var(--line);padding:.5rem 0 .4rem}
 .ihead{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.3rem}
 .no{font-family:var(--mono);background:var(--sea);color:var(--on-sea);border-radius:.2rem;padding:.05rem .45rem;font-size:.86rem}
@@ -263,7 +288,8 @@ table{border-collapse:collapse;width:100%}
   .mx{min-width:34rem}
   .tr,.ac{min-width:0}.tr thead,.ac thead{display:none}.tr,.ac,.tr tbody,.ac tbody{display:block}
   .tr tr,.ac tr{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid var(--line);border-radius:.25rem;margin-top:.5rem;padding:.2rem .3rem;background:var(--field)}
-  .ac tr{grid-template-columns:auto 1fr auto;align-items:center}
+  .ac tr{grid-template-columns:auto 1fr auto;align-items:center}.ac td:nth-child(4){grid-column:1/-1;grid-row:3}
+  .item.gd1{margin-left:.4rem}.item.gd2{margin-left:1.2rem}.gl1{padding-left:.9rem!important}.gl2{padding-left:1.6rem!important}
   .tr th,.ac th{grid-column:1/-1}.tr th,.tr td,.ac th,.ac td{border:0;padding:.2rem .4rem}
   .tr td.num{text-align:left}
   .tr td:nth-child(n+2)::before{display:block;font-size:.74rem;color:var(--sub);font-family:'Noto Sans TC',sans-serif}
@@ -281,7 +307,8 @@ table{border-collapse:collapse;width:100%}
   .only-print{display:block}
   .card,.sheet,.iss{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#fff}
   .sheet{margin-top:0;border-width:1.5px}
-  .strat,.iss,tr,.gc,.matrix{break-inside:avoid}
+  .strat,.iss,tr,.gc,.matrix,.treecard{break-inside:avoid}
+  .gtree{min-width:0!important;max-height:170mm}
   .tw{overflow:visible}
   .st,.tr,.ac{min-width:0}
   .tr .spark{width:80px;height:24px}.meter{width:3rem}
@@ -289,6 +316,7 @@ table{border-collapse:collapse;width:100%}
   .vin,.ac select{border:0;background:none;min-height:0;padding:0;width:4.5rem;min-width:0;appearance:none}
   .vin{-moz-appearance:textfield}.vin::-webkit-inner-spin-button{display:none}
   .card{break-inside:auto;margin-top:.6rem}
+  .treecard,.matrix{break-inside:avoid}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   #pdfWatermark{display:flex!important;position:fixed;inset:0;z-index:9999;align-items:center;justify-content:center;pointer-events:none}
   #pdfWatermark img{width:42%;min-width:200px;max-width:380px;opacity:.11}

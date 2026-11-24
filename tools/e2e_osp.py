@@ -97,7 +97,7 @@ try:
         ctx.grant_permissions(['clipboard-read', 'clipboard-write'], origin=BASE.rstrip('/'))
         pg.click('[data-act=copyTxt]'); pg.wait_for_timeout(200)
         ok('複製文字', '→ 支援 G1、G3' in pg.evaluate('navigator.clipboard.readText()'))
-        for act, ext, want in (('csv', '.csv', 'M 指標'), ('doc', '.doc', '<table')):
+        for act, ext, want in (('csv', '.csv', 'M 衡量指標'), ('doc', '.doc', '<table')):
             with pg.expect_download() as dl: pg.click('[data-act=%s]' % act)
             fp = os.path.join(SHOTS, 'out' + ext); dl.value.save_as(fp); t = open(fp, encoding='utf-8').read()
             ok('下載' + ext, dl.value.suggested_filename.endswith(ext) and t[0] == '﻿' and t[1] != '﻿' and want in t)
@@ -119,6 +119,34 @@ try:
         for nm in ('沒有支援任何目標', '沒有衡量指標', '行動預算超過', '沒有任何策略支援', '沒寫「不做什麼」', '只有落後指標'):
             tab('check'); pg.click('[data-filter=all]'); pg.click('.iss:has(b:has-text("%s")) >> nth=0 >> [data-act=goto]' % nm); pg.wait_for_timeout(80)
             ok('看這格：' + nm, pg.locator('.flash').count() == 1)
+
+        # ---------- 目標樹 ----------
+        pg.click('[data-act=newPlan]'); pg.click('[data-act=newEx][data-id=slp]'); pg.wait_for_timeout(150)
+        lab = lambda: pg.evaluate("_tool.cur().goals.map(g=>OSP.labels(_tool.cur())[g.id])")
+        ok('業務範例的樹', lab() == ['G1', 'g1.1', 'g1.2', 'g1.3', 'G2', 'G3'] and pg.locator('.item.gd1').count() == 3)
+        g0 = pg.evaluate("_tool.cur().goals[0].id"); g1 = pg.evaluate("_tool.cur().goals[1].id")
+        ok('大 G 彙總次目標', '補得滿（110%）' in pg.inner_text('.ihead [data-cov=%s]' % g0) and '次目標合計 10,500' in pg.inner_text('[data-sub=%s]' % g0), pg.inner_text('.ihead [data-cov=%s]' % g0))
+        pg.fill('[data-p="g|%s|target"]' % g1, '4000')
+        ok('改次目標，大 G 合計即時更新', '還差 800' in pg.inner_text('[data-sub=%s]' % g0) and 'gSubShort' in codes()); pg.fill('[data-p="g|%s|target"]' % g1, '4800'); pg.press('[data-p="g|%s|target"]' % g1, 'Tab')
+        pg.click('[data-act=addSub][data-id=%s]' % g1); pg.keyboard.type('冷凍食品')
+        ok('加第三層', 'g1.1.1' in lab() and pg.locator('.item.gd2').count() == 1 and pg.locator('[data-act=addSub]').count() == 6, (lab(), pg.locator('[data-act=addSub]').count()))
+        pg.keyboard.press('Tab'); g111 = pg.evaluate("_tool.cur().goals[2].id")
+        pg.select_option('[data-p="g|%s|up"]' % g111, ''); ok('改掛成大 G', lab()[-1] == 'G4')
+        pg.click('[data-act=move][data-id=%s][data-d="-1"]' % g111); ok('大 G 之間移動', pg.evaluate("_tool.cur().goals.filter(g=>!g.up).map(g=>g.id)").index(g111) == 2)
+        pg.click('[data-act=del][data-id=%s]' % g0); ok('刪大 G 連同次目標', '連同 3 個次目標' in pg.inner_text('.toast')); pg.click('.toast [data-act=undo]')
+        ok('復原整棵樹', 'g1.3' in lab(), (lab(), pg.evaluate("_tool.cur().goals.map(g=>g.t)")))
+        pg.select_option('[data-p="g|%s|roll"]' % g0, 'drive'); ok('改成帶動型', '由次目標帶動' in pg.inner_text('.ihead [data-cov=%s]' % g0)); pg.select_option('[data-p="g|%s|roll"]' % g0, 'sum')
+        ok('M 分成兩塊', pg.locator('.mbox.md').count() == 3 and pg.locator('.mbox.mp').count() == 3 and '衡量指標 Dashboard' in pg.inner_text('.mbox.md >> nth=0') and '行動計畫 Action Plans' in pg.inner_text('.mbox.mp >> nth=0'))
+        tab('page'); ok('航線圖有次目標與樹線', pg.locator('.map .ed.tr').count() == 3)
+        ok('目標樹圖', pg.locator('.gtree .tn').count() == 7 and pg.locator('.sheet .gsub .gc').count() == 3, pg.locator('.gtree .tn').count())
+        pg.screenshot(path=os.path.join(SHOTS, 'd_tree.png'), full_page=True)
+        pg.click('.gtree .tn >> nth=1'); pg.wait_for_timeout(120); ok('點樹跳到次目標', pg.evaluate("document.activeElement.dataset.p") == 'g|%s|t' % g1, (g1, pg.evaluate("document.activeElement.outerHTML.slice(0,90)")))
+        pg.screenshot(path=os.path.join(SHOTS, 'd_tree_fill.png'), full_page=True)
+        tab('track'); pg.select_option('#ymSel', '2027-01')
+        for i, v in enumerate((300, 200, 100)): pg.fill('[data-val="%s"]' % pg.evaluate("_tool.cur().goals[%d].id" % (i + 1)), str(v))
+        ok('大 G 自動加總', pg.get_attribute('[data-val="%s"]' % g0, 'placeholder') == '自動 600' and '600' in pg.inner_text('tr[data-tr="%s"]' % g0), pg.get_attribute('[data-val="%s"]' % g0, 'placeholder'))
+        ok('行動時程條', pg.locator('.gantt').count() == pg.evaluate("OSP.actsOf(_tool.cur()).length"))
+        pdf = os.path.join(SHOTS, 'tree.pdf'); tab('page'); pg.pdf(path=pdf, prefer_css_page_size=True, print_background=True)
 
         # ---------- ④ 追蹤與展開 ----------
         pg.select_option('#planSel', 'pcof'); tab('track')
