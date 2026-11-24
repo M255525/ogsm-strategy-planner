@@ -13,6 +13,8 @@
 - **展開 `cascade`**：S→下層 O、每個 M→下層 G，`goal.src={k:上層指標id, snap}`；`cascadeIssues` 回 `dropped`／`srcChanged`／`srcGone`／`parentGone`／`childLate`；`syncFromParent` 更新改過的、補上沒人接的（別的下層已接就不重複補）。
 - `sanitize`／`sanitizePlan` 是唯一入口（讀存檔、備份、分享、AI 都要過）：id 樣式檢查、日期、數字上限、互為上下層會拆開；整理兩次結果必須相同（測試有驗）。
 
+- **範例 `EXAMPLES`** 17 份，`cat` 對應 `EX_CATS` 五組；除了 `drill`（`bad` 有問題的初稿、`bd2` 補不滿缺口）其餘健檢必須零燈號（測試有驗），`unit` 要寫「虛構」。`cof`、`hrd` 有每月紀錄，`cof`、`slp` 有下一層。
+
 ## 架構
 - localStorage 前綴 `osp.`：`state`（`{plans, cur}`，最多 40 份）、`tab`、`fold`（⚙）、`fsize`、`warnSeen`、`marquee`、`ai`。
 - 欄位用 `data-p="種類|id|欄位"`（種類 p/g/s/k/a）統一處理；輸入只存＋`light()` 局部更新，增刪移動與勾選才 `render()`。每月填入用 `data-val`，只換那一列 `.c-d` 的格子。
@@ -28,5 +30,5 @@
 跑馬燈（工作區公告 GAS，滑鼠移入暫停，不可關）、⚙ 常用設定（收合式：資料／🤖 AI 設定／顯示／關於本工具）、首訪警語＋頁面入口、`manual.html#creator` 完整版（改 `tools/manual_body.html` 後跑 `python tools/build_manual.py`）、PWA、訪客計數器、列印浮水印，無序號。
 
 ## 測試
-- `node tools/test_engine.mjs`：每條健檢規則、缺口、進度手算、跨年、展開斷鏈、整理複製、範例、CSV 公式注入、AI 回覆整理、2000 組亂數，共 2192 項。
-- `python tools/e2e_osp.py [截圖資料夾]`（Playwright，port 8918，擋計數器）：標準配備＋五分頁、復原、健檢跳轉、追蹤、展開同步、分享（含 HTML 注入）、AI（只用模擬回應）、備份、列印 PDF 方向與浮水印、390px，共 112 項。2026-11-24 全過；7 家 AI 未實際連線測試。
+- `node tools/test_engine.mjs`：每條健檢規則、缺口、進度手算、跨年、展開斷鏈、整理複製、範例、CSV 公式注入、AI 回覆整理、2000 組亂數，共 2231 項。
+- `python tools/e2e_osp.py [截圖資料夾]`（Playwright，port 8918，擋計數器）：標準配備＋五分頁、復原、健檢跳轉、追蹤、展開同步、分享（含 HTML 注入）、AI（只用模擬回應）、備份、列印 PDF 方向與浮水印、390px，共 124 項。2026-11-24 全過；7 家 AI 未實際連線測試。

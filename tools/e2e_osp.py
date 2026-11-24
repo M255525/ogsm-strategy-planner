@@ -104,10 +104,12 @@ try:
         pg.click('.map .nd[data-n=gcof2]'); pg.wait_for_timeout(150)
         ok('點浮標跳到那一格', pg.evaluate("document.activeElement.dataset.p") == 'g|gcof2|t')
 
-        # ---------- ③ 健檢（6 個範例） ----------
-        for ex in ('ecm', 'trn', 'mfg', 'spk', 'bad'):
+        # ---------- ③ 健檢（全部範例） ----------
+        pg.click('[data-act=newPlan]'); ok('範例分五組、共 17 份、附 O 一句話', pg.locator('.exc').count() == 5 and pg.locator('.exb').count() == 17 and '晚餐最放心' in pg.inner_text('#modalBox'))
+        pg.screenshot(path=os.path.join(SHOTS, 'd_new.png')); pg.click('#modalBox [data-act=close]')
+        for ex in ('rst', 'hom', 'sal', 'gym', 'frm', 'saa', 'slp', 'hrd', 'npo', 'lif', 'ecm', 'trn', 'mfg', 'spk', 'bd2', 'bad'):
             pg.click('[data-act=newPlan]'); pg.click('[data-act=newEx][data-id=%s]' % ex); pg.wait_for_timeout(120)
-            n = len(codes()); ok('範例 %s' % ex, (n >= 20) if ex == 'bad' else n == 0, codes())
+            n = len(codes()); ok('範例 %s' % ex, (n >= 20) if ex == 'bad' else (n >= 5) if ex == 'bd2' else n == 0, codes())
         tab('check')
         ok('有問題的初稿：紅黃燈與分數', pg.locator('.iss.bad').count() == 9 and '草稿階段' in pg.inner_text('.scorecard'), pg.locator('.iss.bad').count())
         pg.screenshot(path=os.path.join(SHOTS, 'd_check_bad.png'), full_page=True)

@@ -140,10 +140,15 @@ for(const e of M.EXAMPLES){
   const list = e.make();
   for(const p of list){
     eq(e.id + ' 範例整理後不變', M.sanitizePlan(p), p);
-    if(e.id !== 'bad') eq(e.id + ' 範例沒有燈號', codes(p, list), []);
+    if(e.cat !== 'drill') eq(e.id + ' 範例沒有燈號', codes(p, list), []);
   }
   ok(e.id + ' 標示虛構', list[0].unit.includes('虛構'));
 }
+eq('範例 id 不重複', new Set(M.EXAMPLES.map(e => e.id)).size, M.EXAMPLES.length);
+eq('每個分類都有範例、範例都有分類', [...new Set(M.EXAMPLES.map(e => e.cat))].sort(), M.EX_CATS.map(c => c[0]).sort());
+ok('練習缺口：不足、沒人支援、沒估、太樂觀、只有落後都有', ['cShort', 'cNone', 'cUnest', 'cOver', 'mLag'].every(c => codes(M.example('bd2')[0]).includes(c)), codes(M.example('bd2')[0]));
+{ const h = M.example('hrd')[0]; eq('人資範例：累計離職 22 人、應達 24×304/365', [M.progress(h, h.goals[2], '2026-10').actual, M.fmt(M.progress(h, h.goals[2], '2026-10').exp)], [22, M.fmt(24 * 304 / 365)]); }
+{ const l = M.example('slp'); eq('業務範例有下一層', [l.length, l[1].parent.plan, l[1].goals.length], [2, l[0].id, 2]); }
 ok('有問題的初稿至少 20 條', M.check(M.example('bad')[0]).length >= 20);
 eq('不存在的範例', M.example('zzz'), null);
 

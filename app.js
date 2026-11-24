@@ -381,7 +381,11 @@ var ACT = {
   foldall:function(){ var d = qa('.set-sec'), any = d.some(function(x){ return !x.open; }); d.forEach(function(x){ x.open = any; }); saveFold(); },
   undo:function(){ if(!V.undo.length) return; S = D.sanitize(JSON.parse(V.undo.pop())); save(); render(); toast('已復原'); },
   // 計畫
-  newPlan:function(){ openModal('<h2>新增一份 OGSM</h2><div class="vstack"><button class="btn" data-act="newBlank">空白的一份</button></div><h3 style="margin-top:.9rem">或從虛構範例開始</h3><div class="vstack">' + D.EXAMPLES.map(function(e){ return '<button class="btn alt" data-act="newEx" data-id="' + e.id + '">' + esc(e.n) + '</button>'; }).join('') + '<button class="btn alt" data-act="close">取消</button></div>'); },
+  newPlan:function(){
+    openModal('<h2>新增一份 OGSM</h2><div class="vstack"><button class="btn" data-act="newBlank">空白的一份</button></div><h3 class="exh">或從 ' + D.EXAMPLES.length + ' 份虛構範例開始</h3>' + D.EX_CATS.map(function(c){
+      return '<h4 class="exc">' + c[1] + '</h4><div class="exg">' + D.EXAMPLES.filter(function(e){ return e.cat === c[0]; }).map(function(e){ return '<button class="exb" data-act="newEx" data-id="' + e.id + '"><b>' + esc(e.n) + '</b><small>' + esc(e.make()[0].o) + '</small></button>'; }).join('') + '</div>';
+    }).join('') + '<div class="vstack"><button class="btn alt" data-act="close">取消</button></div>');
+  },
   newBlank:function(){ var d = new Date(); addPlans([D.blankPlan(d.getFullYear() + (d.getMonth() >= 9 ? 1 : 0))], '已新增空白的一份'); },
   newEx:function(ds){
     var l = D.example(ds.id), map = {}, out = l.map(function(p){ var c = D.clone(p); map[p.id] = {c:c, p:p}; return c; });
