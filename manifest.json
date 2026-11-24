@@ -1,0 +1,16 @@
+{
+  "name": "OGSM 策略規劃表",
+  "short_name": "OGSM 策",
+  "description": "用一頁 OGSM 把目的、目標、策略、衡量接起來：填寫精靈、邏輯健檢、一頁總表列印、往下展開到部門、每月追蹤進度",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EEF2F7",
+  "theme_color": "#1F3A5F",
+  "lang": "zh-TW",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
