@@ -355,7 +355,7 @@ function toCsv(plan){
     s.kpis.forEach(function(k){ rows.push(['M 指標', L[k.id], k.t, k.base, k.target, k.unit, k.dir === 'down' ? '越低越好' : '越高越好', FREQ[k.freq], k.owner, L[s.id], (k.lead ? '領先指標' : '落後指標') + (k.guess ? '・AI 推測未確認' : ''), '', '']); });
     s.acts.forEach(function(a){ rows.push(['M 行動', L[a.id], a.t, '', '', '', '', a.to, a.owner, L[s.id], a.from ? a.from + ' 開始' : '', a.cost, ST[a.st]]); });
   });
-  return '﻿' + rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n');
+  return '\ufeff' + rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n');
 }
 function toDoc(plan){
   var L = labels(plan), td = '<td style="border:1px solid #555;padding:5pt;vertical-align:top">';

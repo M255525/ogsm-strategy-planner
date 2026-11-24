@@ -421,7 +421,7 @@ var ACT = {
   // 匯出
   copyTxt:function(){ copyText(D.toText(cur()), '已複製文字版'); },
   csv:function(){ download(safeName(cur().name) + '.csv', D.toCsv(cur()), 'text/csv;charset=utf-8'); },
-  doc:function(){ download(safeName(cur().name) + '.doc', '﻿' + D.toDoc(cur()), 'application/msword'); },
+  doc:function(){ download(safeName(cur().name) + '.doc', '\ufeff' + D.toDoc(cur()), 'application/msword'); },
   // AI
   aiDraft:function(){
     var p = cur(), bg = $('aiBg').value.trim(); V.bg = bg; if(bg.length < 6){ toast('先寫一段背景，AI 才有依據'); $('aiBg').focus(); return; }
