@@ -4,7 +4,7 @@
 
 - 純靜態：`index.html`（CSS）＋`data.js`（規則引擎 `window.OSP`，node 可 require）＋`app.js`（畫面）＋`ai.js`（BYOK 7 家，`window.TOOL_AI`，不改）＋`watermark.js`＋`manual.html`＋PWA。
 - 本機預覽 port **8908**（`.claude/launch.json` 的 `ogsm-strategy-planner`；程式牆 `LOCAL_APPS`，`MARKETING_SUB` 行銷・商業策略）。visitor-badge `m255525.ogsmstrategyplanner`（手冊 `.manual`）。
-- 尚未上線。上線後在這裡記網址與日期；改版要升 `service-worker.js` 的 `CACHE_NAME` 再 push。
+- **2026-11-24 已上線** <https://m255525.github.io/ogsm-strategy-planner/>（`publish.mjs`：建 repo＋push → 開 Pages → 補 master 部署規則 → workflow_dispatch）。程式牆 `REPO_META`、github-dashboard、AI 工具導航已登記。改版後升 `service-worker.js` 的 `CACHE_NAME` 再 push。
 
 ## 規則（`data.js`，全部是自訂經驗法則；改了跑 `node tools/test_engine.mjs`）
 - **缺口 `coverage`**：缺口＝目標與起點的差（依方向），各策略 `links[目標id]` 的預估貢獻加總。<80% `short` 紅、<100% `near` 黃、>150% `over` 黃、有人沒估且還不夠 `unest` 黃、沒人支援 `none` 紅；起點空白或缺口 ≤0 為 `na`。
